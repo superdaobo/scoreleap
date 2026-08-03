@@ -6,7 +6,7 @@
 
 | 版本 | 主题 | 平台 | 关键依赖 | 目标 |
 |---|---|---|---|---|
-| v0.1.0 | Windows MIDI MVP | Windows | 无（纯本地） | 端到端可演奏 |
+| v0.1.0 | Windows MIDI MVP | Windows | 无（纯本地） | ✅ 已发布（2026-08-03，Release v0.1.0） |
 | v0.2.0 | Android MIDI MVP | Android | v0.1 的 Music IR/编排/时间轴 | 触屏演奏可用 |
 | v0.3.0 | Score Editor | 全平台 | v0.1/v0.2 | 可编辑工程 |
 | v0.4.0 | Audio Transcription | Windows | v0.3；Symphonia + ONNX Runtime | 音频转 MIDI |
@@ -124,3 +124,4 @@
 2. 版本内所有 Issue 完成（含测试、文档、CI）才允许发布；
 3. 发布 = tag `vX.Y.Z` + release.yml 自动构建 + Release Notes + SHA256；
 4. 版本范围变更需更新本文件并走 PR 审查。
+
