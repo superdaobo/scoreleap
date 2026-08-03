@@ -1,0 +1,16 @@
+{
+  "name": "scoreleap",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.33.4",
+  "scripts": {
+    "dev": "pnpm --filter scoreleap-app dev",
+    "build": "pnpm --filter scoreleap-app build",
+    "tauri": "pnpm --filter scoreleap-app tauri",
+    "lint": "pnpm --filter scoreleap-app lint",
+    "typecheck": "pnpm --filter scoreleap-app typecheck",
+    "test": "pnpm --filter scoreleap-app test",
+    "test:e2e": "pnpm --filter scoreleap-app test:e2e"
+  }
+}

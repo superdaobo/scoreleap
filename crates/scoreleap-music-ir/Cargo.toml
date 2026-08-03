@@ -1,0 +1,12 @@
+[package]
+name = "scoreleap-music-ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Unified music intermediate representation for ScoreLeap (整数微秒时间轴)"
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

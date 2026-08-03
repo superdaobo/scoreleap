@@ -1,0 +1,13 @@
+[package]
+name = "scoreleap-sequence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-independent compiled sequence and playback state types"
+
+[dependencies]
+scoreleap-music-ir = { path = "../scoreleap-music-ir" }
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -1,0 +1,24 @@
+[package]
+name = "scoreleap-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ScoreLeap Tauri command orchestration layer"
+
+[dependencies]
+scoreleap-music-ir = { path = "../scoreleap-music-ir" }
+scoreleap-midi = { path = "../scoreleap-midi" }
+scoreleap-arranger = { path = "../scoreleap-arranger" }
+scoreleap-sequence = { path = "../scoreleap-sequence" }
+scoreleap-game-profile = { path = "../scoreleap-game-profile" }
+scoreleap-scheduler = { path = "../scoreleap-scheduler" }
+tauri-plugin-scoreleap-input = { path = "../../plugins/tauri-plugin-scoreleap-input" }
+tauri.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true

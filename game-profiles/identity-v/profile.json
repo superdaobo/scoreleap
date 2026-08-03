@@ -1,0 +1,14 @@
+{
+  "id": "identity-v",
+  "display_name": "Identity V 游戏乐器（36 键）",
+  "version": 1,
+  "instrument": {
+    "keys": 36,
+    "midi_low": 48,
+    "midi_high": 83,
+    "max_polyphony": 4
+  },
+  "keymap_windows": "windows-keymap.json",
+  "layout_android": "android-layout.json",
+  "warning": "本 Profile 基于公开的游戏内乐器布局整理。仅用于自由演奏/个人空间场景；使用本工具可能违反游戏用户协议（第三方软件条款），风险由用户自行承担。键位映射可在 profile 文件中调整，实机验证后修正。"
+}
