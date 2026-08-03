@@ -3,7 +3,6 @@
 
 # Rust
 target/
-Cargo.lock
 **/target/
 
 # Node / pnpm
@@ -15,6 +14,8 @@ dist-js/
 # Tauri / 构建产物
 apps/scoreleap/src-tauri/target/
 apps/scoreleap/src-tauri/gen/
+apps/scoreleap/src-tauri/icons/android/
+apps/scoreleap/src-tauri/icons/ios/
 *.msi
 *.exe
 *.app

@@ -1,0 +1,15 @@
+[package]
+name = "scoreleap-scheduler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Precise playback scheduler with virtual clock and mockable input backend"
+
+[dependencies]
+scoreleap-music-ir = { path = "../scoreleap-music-ir" }
+scoreleap-sequence = { path = "../scoreleap-sequence" }
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true

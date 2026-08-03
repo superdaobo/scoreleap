@@ -1,0 +1,18 @@
+[package]
+name = "scoreleap-arranger"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Arrangement pipeline: transpose, range folding, quantize, polyphony limit, compile"
+
+[dependencies]
+scoreleap-music-ir = { path = "../scoreleap-music-ir" }
+scoreleap-sequence = { path = "../scoreleap-sequence" }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+scoreleap-midi = { path = "../scoreleap-midi" }
+scoreleap-game-profile = { path = "../scoreleap-game-profile" }
+serde_json.workspace = true
+

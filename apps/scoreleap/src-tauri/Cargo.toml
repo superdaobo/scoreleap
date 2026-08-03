@@ -1,0 +1,28 @@
+[package]
+name = "scoreleap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ScoreLeap desktop application (Tauri shell)"
+
+[lib]
+name = "scoreleap_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+scoreleap-core = { path = "../../../crates/scoreleap-core" }
+scoreleap-arranger = { path = "../../../crates/scoreleap-arranger" }
+scoreleap-music-ir = { path = "../../../crates/scoreleap-music-ir" }
+scoreleap-sequence = { path = "../../../crates/scoreleap-sequence" }
+tauri.workspace = true
+tauri-plugin-store = { workspace = true, features = [] }
+tauri-plugin-dialog = { workspace = true, features = [] }
+tauri-plugin-global-shortcut = { workspace = true, features = [] }
+tauri-plugin-scoreleap-input = { path = "../../../plugins/tauri-plugin-scoreleap-input" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

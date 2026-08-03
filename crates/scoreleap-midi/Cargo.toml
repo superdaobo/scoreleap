@@ -1,0 +1,11 @@
+[package]
+name = "scoreleap-midi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SMF (.mid) parsing to Music IR via midly"
+
+[dependencies]
+scoreleap-music-ir = { path = "../scoreleap-music-ir" }
+midly.workspace = true
+thiserror.workspace = true

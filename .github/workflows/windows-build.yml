@@ -1,0 +1,72 @@
+name: Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build NSIS installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # 与根 package.json 的 packageManager 字段保持一致
+          version: 10.33.4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installer (tauri-action)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          # tauri.conf.json 所在目录；tauri-action 会在此执行 `tauri build`
+          projectPath: apps/scoreleap/src-tauri
+          args: --bundles nsis
+          # 只构建：不自动发布 GitHub Release，产物由下方 upload-artifact 上传
+          publish: false
+          uploadArtifacts: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute installer SHA256
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path "apps/scoreleap/src-tauri/target/release/bundle/nsis" -Filter *.exe | Select-Object -First 1
+          if (-not $installer) { throw "NSIS 安装包未找到" }
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $installer.FullName).Hash.ToLower()
+          # 格式与 certutil / Get-FileHash 输出一致：<hash>  <文件名>
+          "$hash  $($installer.Name)" | Set-Content -Encoding ascii -Path "scoreleap-windows-installer.sha256"
+          Write-Host "SHA256: $hash  $($installer.Name)"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoreleap-windows-installer
+          path: |
+            apps/scoreleap/src-tauri/target/release/bundle/nsis/*.exe
+            scoreleap-windows-installer.sha256
+          if-no-files-found: error
