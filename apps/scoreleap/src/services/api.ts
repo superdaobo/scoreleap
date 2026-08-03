@@ -75,6 +75,11 @@ export function currentProfile(): Promise<GameProfile | null> {
   return invoke<GameProfile | null>('current_profile')
 }
 
+/** 上次会话是否异常退出（命令 get_crash_flag；启动自检） */
+export function getCrashFlag(): Promise<boolean> {
+  return invoke<boolean>('get_crash_flag')
+}
+
 /**
  * 选择 MIDI 文件（@tauri-apps/plugin-dialog）。
  * 用户取消时返回 null。

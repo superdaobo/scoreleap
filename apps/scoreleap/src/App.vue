@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { getCrashFlag } from './services/api'
 
 const route = useRoute()
+const crashed = ref(false)
 
 interface NavItem {
   to: string
@@ -21,6 +23,14 @@ const navItems = computed<NavItem[]>(() => {
     { to: '/test', label: '按键测试', active: p.startsWith('/test') },
     { to: '/settings', label: '设置', active: p.startsWith('/settings') },
   ]
+})
+
+onMounted(async () => {
+  try {
+    crashed.value = await getCrashFlag()
+  } catch {
+    crashed.value = false
+  }
 })
 </script>
 
@@ -55,6 +65,12 @@ const navItems = computed<NavItem[]>(() => {
         </RouterLink>
       </nav>
     </header>
+    <div
+      v-if="crashed"
+      class="border-b border-amber-800/60 bg-amber-950/60 px-4 py-2 text-center text-sm text-amber-300"
+    >
+      ⚠ 检测到上次会话异常退出：若游戏内按键卡住，请重启游戏；演奏前建议先暂停并重新聚焦游戏窗口。
+    </div>
     <main class="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
       <RouterView />
     </main>

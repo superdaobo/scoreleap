@@ -377,12 +377,18 @@ impl Scheduler {
                             if let Some(s) = &mut self.session {
                                 s.origin_wall_us = resume_wall - s.paused_elapsed_us;
                             }
+                            let mut failed = false;
                             for k in self.logical_pressed_keys() {
                                 if let Err(e) = self.backend.key_down(k) {
                                     self.emit(SchedulerEvent::Error(e.to_string()));
                                     self.emergency_stop();
+                                    self.emit(SchedulerEvent::State(PlaybackState::Stopped));
+                                    failed = true;
                                     break;
                                 }
+                            }
+                            if failed {
+                                return;
                             }
                             self.state = PlaybackState::Playing;
                             self.emit(SchedulerEvent::State(PlaybackState::Playing));
@@ -477,16 +483,20 @@ impl Scheduler {
         self.emit(SchedulerEvent::State(PlaybackState::Playing));
     }
 
-    /// 逻辑时间 → 墙钟时间。
+    /// 逻辑时间 → 墙钟时间（session 缺失时返回原值，防御崩溃路径）。
     fn wall_of(&self, logic_us: i64) -> i64 {
-        let s = self.session.as_ref().expect("session");
-        s.origin_wall_us + (logic_us as f64 / s.speed.max(0.05)) as i64
+        match &self.session {
+            Some(s) => s.origin_wall_us + (logic_us as f64 / s.speed.max(0.05)) as i64,
+            None => logic_us,
+        }
     }
 
-    /// 墙钟时间 → 逻辑时间。
+    /// 墙钟时间 → 逻辑时间（session 缺失时返回 0，防御崩溃路径）。
     fn logic_of(&self, wall_us: i64) -> i64 {
-        let s = self.session.as_ref().expect("session");
-        ((wall_us - s.origin_wall_us) as f64 * s.speed.max(0.05)) as i64
+        match &self.session {
+            Some(s) => ((wall_us - s.origin_wall_us) as f64 * s.speed.max(0.05)) as i64,
+            None => 0,
+        }
     }
 
     fn play_loop(&mut self) {
@@ -547,7 +557,10 @@ impl Scheduler {
                 Some(a) => {
                     let wall = self.wall_of(a.at_us());
                     if wall <= now {
-                        self.dispatch(a);
+                        if !self.dispatch(a) {
+                            // dispatch 失败已紧急停止
+                            return;
+                        }
                         if let Some(s) = &mut self.session {
                             s.action_idx += 1;
                         }
@@ -597,7 +610,8 @@ impl Scheduler {
         }
     }
 
-    fn dispatch(&mut self, a: scoreleap_sequence::PlatformAction) {
+    /// 执行动作。返回 false 表示后端失败已紧急停止（调用方应退出播放循环）。
+    fn dispatch(&mut self, a: scoreleap_sequence::PlatformAction) -> bool {
         let res = match a {
             scoreleap_sequence::PlatformAction::KeyDown { key, .. } => {
                 if let Some(s) = &mut self.session {
@@ -619,11 +633,15 @@ impl Scheduler {
             self.emit(SchedulerEvent::Error(e.to_string()));
             self.emergency_stop();
             self.emit(SchedulerEvent::State(PlaybackState::Stopped));
+            return false;
         }
+        true
     }
 
     fn emergency_stop(&mut self) {
-        let _ = self.backend.release_all();
+        if let Err(e) = self.backend.release_all() {
+            self.emit(SchedulerEvent::Error(format!("释放按键失败: {e}")));
+        }
         self.session = None;
         self.state = PlaybackState::Stopped;
     }

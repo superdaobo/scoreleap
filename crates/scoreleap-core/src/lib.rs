@@ -50,6 +50,8 @@ pub struct AppState {
     pub profile: Mutex<Option<GameProfile>>,
     pub profile_dir: Mutex<std::path::PathBuf>,
     pub scheduler: Mutex<Option<SchedulerHandle>>,
+    /// 上次会话异常退出标记（启动自检）。
+    pub crash_flag: Mutex<bool>,
 }
 
 /// 导入结果摘要。

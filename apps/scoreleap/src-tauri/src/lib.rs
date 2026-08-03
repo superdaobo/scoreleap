@@ -19,6 +19,21 @@ fn init_logging() {
         .try_init();
 }
 
+/// 崩溃标记文件路径（异常退出自检）。
+fn crash_flag_path() -> std::path::PathBuf {
+    std::env::temp_dir().join("scoreleap-crash-flag")
+}
+
+/// 注册 panic hook：记录日志 + 写崩溃标记（尽力释放按键由调度器句柄在窗口销毁时处理）。
+fn install_panic_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default(info);
+        eprintln!("ScoreLeap panic: {info}");
+        let _ = std::fs::write(crash_flag_path(), "crash");
+    }));
+}
+
 #[tauri::command]
 fn import_midi(
     state: State<'_, AppState>,
@@ -95,8 +110,14 @@ fn current_profile(
     scoreleap_core::current_profile(&state)
 }
 
+#[tauri::command]
+fn get_crash_flag(state: State<'_, AppState>) -> bool {
+    *state.crash_flag.lock().unwrap()
+}
+
 pub fn run() {
     init_logging();
+    install_panic_hook();
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -120,6 +141,13 @@ pub fn run() {
             };
             *app.state::<AppState>().profile_dir.lock().unwrap() = profiles_dir;
 
+            // 启动自检：检测上次会话异常退出标记
+            let crashed = crash_flag_path().exists();
+            *app.state::<AppState>().crash_flag.lock().unwrap() = crashed;
+            if crashed {
+                tracing::warn!("检测到上次会话异常退出；若游戏内按键卡住请重启游戏");
+            }
+
             // 注册紧急停止全局快捷键：Ctrl+Alt+F9（避开系统保留组合）
             let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::F9);
             let _ = app
@@ -135,10 +163,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 窗口销毁时确保调度器关闭（释放按键）
+            // 窗口销毁时确保调度器关闭（释放按键）并清除崩溃标记（正常退出）
             if let tauri::WindowEvent::Destroyed = event {
                 let state = window.state::<AppState>();
                 scoreleap_core::shutdown_scheduler(&state);
+                let _ = std::fs::remove_file(crash_flag_path());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -153,6 +182,7 @@ pub fn run() {
             list_profiles,
             load_profile,
             current_profile,
+            get_crash_flag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
