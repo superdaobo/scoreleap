@@ -1,0 +1,58 @@
+name: Research
+description: 技术调研/可行性验证（先研究后实现）
+title: "[research] "
+labels: ["type:research", "status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 背景
+        ## 问题
+        ## 目标
+        ## 用户价值
+  - type: textarea
+    id: scope
+    attributes:
+      label: 调研范围
+      description: 待验证的问题清单
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: 非目标
+  - type: textarea
+    id: method
+    attributes:
+      label: 方法与来源
+      description: 官方文档/官方仓库优先；结论回填 planning/research-findings.md
+    validations:
+      required: true
+  - type: textarea
+    id: deps
+    attributes:
+      label: 依赖关系
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 结论文档化 + 评审通过
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: 测试/验证要求
+  - type: textarea
+    id: docs
+    attributes:
+      label: 文档要求
+      description: 更新 research-findings.md / 相关 ADR
+  - type: textarea
+    id: risk
+    attributes:
+      label: 风险
+  - type: textarea
+    id: dod
+    attributes:
+      label: 完成定义

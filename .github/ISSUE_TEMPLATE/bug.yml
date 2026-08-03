@@ -1,0 +1,69 @@
+name: Bug
+description: 缺陷报告（必须附回归测试）
+title: "[bug] "
+labels: ["type:bug", "status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 背景
+        ## 问题
+        ## 目标
+        ## 用户价值
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开...
+        2. 导入...
+        3. 观察...
+      value: |
+        ## 范围
+        ## 非目标
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: tech
+    attributes:
+      label: 技术建议（根因假设）
+  - type: textarea
+    id: deps
+    attributes:
+      label: 依赖关系
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 含「新增回归测试」条目
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: 测试要求
+      description: 回归测试必须随修复提交
+  - type: textarea
+    id: docs
+    attributes:
+      label: 文档要求
+  - type: textarea
+    id: risk
+    attributes:
+      label: 风险
+  - type: textarea
+    id: dod
+    attributes:
+      label: 完成定义
