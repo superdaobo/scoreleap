@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 项目文档
+    url: https://github.com/superdaobo/scoreleap/tree/main/docs
+    about: 先查阅 PRODUCT_PLAN / PRD / ARCHITECTURE / RISK_AND_COMPLIANCE

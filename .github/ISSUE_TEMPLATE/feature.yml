@@ -1,0 +1,86 @@
+name: Feature
+description: 新功能需求（Issue 驱动开发的标准入口）
+title: "[feature] "
+labels: ["type:feature", "status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 背景
+        （为什么需要这个功能；关联 PRD/ADR 章节）
+
+        ## 问题
+        （现状与差距）
+
+        ## 目标
+        （可验证的完成状态）
+
+        ## 用户价值
+        （对用户的意义）
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围
+      description: 包含什么、不包含什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: 非目标
+    validations:
+      required: false
+
+  - type: textarea
+    id: tech
+    attributes:
+      label: 技术建议
+      description: 参考 planning/research-findings.md 与 docs/adr/
+    validations:
+      required: false
+
+  - type: textarea
+    id: deps
+    attributes:
+      label: 依赖关系
+      description: 依赖的 Issue 编号
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 逐条可验证
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: 测试要求
+    validations:
+      required: false
+
+  - type: textarea
+    id: docs
+    attributes:
+      label: 文档要求
+    validations:
+      required: false
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: 风险
+    validations:
+      required: false
+
+  - type: textarea
+    id: dod
+    attributes:
+      label: 完成定义
+    validations:
+      required: false
