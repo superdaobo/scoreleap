@@ -1,0 +1,45 @@
+# Reasonix 工具目录
+.reasonix/
+
+# Rust
+target/
+Cargo.lock
+**/target/
+
+# Node / pnpm
+node_modules/
+dist/
+dist-js/
+**/node_modules/
+
+# Tauri / 构建产物
+apps/scoreleap/src-tauri/target/
+apps/scoreleap/src-tauri/gen/
+*.msi
+*.exe
+*.app
+*.dmg
+*.deb
+*.rpm
+
+# Android
+*.apk
+*.aab
+apps/scoreleap/src-tauri/gen/android/
+
+# 模型与大数据文件（不进入 Git）
+models/*.onnx
+models/*.bin
+*.weights
+
+# 日志与本地数据
+*.log
+*.log.*
+data/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
