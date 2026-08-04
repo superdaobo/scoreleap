@@ -8,11 +8,46 @@ use scoreleap_sequence::PlaybackState;
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-/// 初始化 tracing 日志。
+/// 初始化 tracing 日志（stderr 不可见时写入应用数据目录 logs/，便于诊断）。
 fn init_logging() {
     use tracing_subscriber::EnvFilter;
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,scoreleap=info"));
+
+    let log_dir = std::env::var("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("com.superdaobo.scoreleap")
+        .join("logs");
+    {
+        let dir = &log_dir;
+        let _ = std::fs::create_dir_all(dir);
+        // 清理旧日志：保留最近 10 个
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".log"))
+            .collect();
+        files.sort_by_key(|e| e.file_name());
+        for old in files.iter().take(files.len().saturating_sub(10)) {
+            let _ = std::fs::remove_file(old.path());
+        }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let path = dir.join(format!("scoreleap-{ts}.log"));
+        if let Ok(file) = std::fs::File::create(&path) {
+            tracing::info!("日志文件: {}", path.display());
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_target(false)
+                .with_writer(std::sync::Mutex::new(file))
+                .try_init();
+            return;
+        }
+    }
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
@@ -130,6 +165,11 @@ fn get_crash_flag(state: State<'_, AppState>) -> bool {
     *state.crash_flag.lock().unwrap()
 }
 
+#[tauri::command]
+fn test_key(scan: u16) -> Result<String, CoreError> {
+    scoreleap_core::test_key(scan)
+}
+
 pub fn run() {
     init_logging();
     install_panic_hook();
@@ -227,6 +267,7 @@ pub fn run() {
             load_profile,
             current_profile,
             get_crash_flag,
+            test_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

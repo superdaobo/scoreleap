@@ -47,6 +47,20 @@ fn inject(key: KeyCode, key_up: bool) -> Result<(), BackendError> {
         KeyCode::Scan(s) => (s, false),
         KeyCode::ExtendedScan(s) => (s, true),
     };
+    inject_scan(scan, extended, key_up)
+}
+
+/// 按扫描码注入一次按键（供测试页排查 UIPI 阻止）。
+pub fn test_inject_key(scan: u16) -> Result<String, BackendError> {
+    inject_scan(scan, false, false)?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    inject_scan(scan, false, true)?;
+    Ok(format!(
+        "已向前台窗口发送扫描码 {scan:#06x}（若目标程序无反应：① 游戏是否以管理员运行？\n② 前台窗口是否真的是游戏？）"
+    ))
+}
+
+fn inject_scan(scan: u16, extended: bool, key_up: bool) -> Result<(), BackendError> {
     let mut flags = KEYEVENTF_SCANCODE;
     if extended {
         flags |= KEYEVENTF_EXTENDEDKEY;
