@@ -914,5 +914,3 @@ mod tests {
         handle.shutdown();
     }
 }
-
-
