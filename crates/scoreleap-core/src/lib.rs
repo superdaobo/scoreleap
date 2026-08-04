@@ -77,6 +77,9 @@ pub struct DocumentSummary {
     pub note_count: usize,
     pub duration_ms: i64,
     pub bpm_range: (f64, f64),
+    /// 来源类型：midi / audio_transcription（serde default 向后兼容）。
+    #[serde(default = "default_source_type")]
+    pub source_type: String,
 }
 
 /// manifest 持久化条目。
@@ -90,6 +93,9 @@ pub struct ManifestEntry {
     pub duration_ms: i64,
     pub bpm_range: (f64, f64),
     pub imported_at: u64,
+    /// 来源类型：midi / audio_transcription（旧 manifest 缺省 = midi）。
+    #[serde(default = "default_source_type")]
+    pub source_type: String,
 }
 
 /// 导入结果摘要。
@@ -102,6 +108,13 @@ pub struct ImportSummary {
     pub note_count: usize,
     pub duration_ms: i64,
     pub bpm_range: (f64, f64),
+    /// 来源类型：midi / audio_transcription。
+    #[serde(default = "default_source_type")]
+    pub source_type: String,
+}
+
+fn default_source_type() -> String {
+    "midi".into()
 }
 
 /// 轨道摘要。
@@ -134,10 +147,25 @@ pub struct PlaybackStatus {
 // 业务逻辑（命令适配层调用）
 // ---------------------------------------------------------------------------
 
-/// 导入 MIDI 文件（解析在后台线程执行）。
+/// 导入 MIDI 文件（解析在后台线程执行）。来源类型为 midi。
 pub fn import_midi(state: &AppState, path: String) -> Result<ImportSummary, CoreError> {
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "untitled".into());
+    import_midi_from_path(state, &path, &name, "midi")
+}
+
+/// 共享 MIDI 导入入口：直接导入的 MIDI 与转录生成的 MIDI 均经此进入曲谱库。
+/// `display_name` 用于曲谱库显示名；`source_type` 为 midi 或 audio_transcription。
+pub fn import_midi_from_path(
+    state: &AppState,
+    path: &str,
+    display_name: &str,
+    source_type: &str,
+) -> Result<ImportSummary, CoreError> {
     let bytes =
-        std::fs::read(&path).map_err(|e| CoreError::Invalid(format!("读取文件失败: {e}")))?;
+        std::fs::read(path).map_err(|e| CoreError::Invalid(format!("读取文件失败: {e}")))?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let _ = tx.send(scoreleap_midi::parse_midi(&bytes));
@@ -146,10 +174,6 @@ pub fn import_midi(state: &AppState, path: String) -> Result<ImportSummary, Core
         .recv()
         .map_err(|_| CoreError::Invalid("解析线程失败".into()))?
         .map_err(CoreError::from)?;
-    let name = std::path::Path::new(&path)
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "untitled".into());
     let doc_id = format!("doc-{}", uuid::Uuid::new_v4());
     let summary = ImportSummary {
         doc_id: doc_id.clone(),
@@ -158,12 +182,13 @@ pub fn import_midi(state: &AppState, path: String) -> Result<ImportSummary, Core
         format: format!("{:?}", doc.format),
         track_count: doc.tracks.len(),
         bpm_range: doc.bpm_range(),
-        name,
+        name: display_name.to_string(),
+        source_type: source_type.to_string(),
     };
     state.documents.lock().unwrap().insert(doc_id.clone(), doc);
 
     // 持久化：复制源文件到曲谱库并更新 manifest（失败不阻断导入，仅记录日志）
-    if let Err(e) = persist_import(state, &doc_id, &path, &summary) {
+    if let Err(e) = persist_import(state, &doc_id, path, &summary) {
         tracing::warn!("曲谱库持久化失败（本次会话仍可用）: {e}");
     }
 
@@ -193,6 +218,7 @@ fn persist_import(
             format: summary.format.clone(),
             track_count: summary.track_count,
             note_count: summary.note_count,
+            source_type: summary.source_type.clone(),
             duration_ms: summary.duration_ms,
             bpm_range: summary.bpm_range,
             imported_at: std::time::SystemTime::now()
@@ -247,6 +273,7 @@ pub fn list_documents(state: &AppState) -> Result<Vec<DocumentSummary>, CoreErro
                 note_count: e.note_count,
                 duration_ms: e.duration_ms,
                 bpm_range: e.bpm_range,
+                source_type: e.source_type,
             });
         }
     }

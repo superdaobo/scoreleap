@@ -7,6 +7,7 @@ members = [
     "crates/scoreleap-sequence",
     "crates/scoreleap-game-profile",
     "crates/scoreleap-scheduler",
+    "crates/scoreleap-transcription",
     "crates/scoreleap-core",
     "plugins/tauri-plugin-scoreleap-input",
     "apps/scoreleap/src-tauri",

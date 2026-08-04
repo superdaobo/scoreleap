@@ -2651,6 +2651,7 @@ dependencies = [
  "scoreleap-core",
  "scoreleap-music-ir",
  "scoreleap-sequence",
+ "scoreleap-transcription",
  "serde",
  "serde_json",
  "tauri",
@@ -2743,6 +2744,18 @@ dependencies = [
  "scoreleap-music-ir",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "scoreleap-transcription"
+version = "0.1.5"
+dependencies = [
+ "scoreleap-midi",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
