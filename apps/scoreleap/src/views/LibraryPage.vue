@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useTranscriptionStore } from '../stores/transcriptionStore'
-import { pickAudioFile, pickMidiFile } from '../services/api'
+import { getAudioFileInfo, pickAudioFile, pickMidiFile } from '../services/api'
 import { formatDuration } from '../utils/format'
 
 const router = useRouter()
@@ -36,16 +36,30 @@ async function chooseFile(): Promise<void> {
   }
 }
 
-/** 从音频转录：选择 MP3 → 启动转录（进度卡片显示；完成后自动刷新曲谱库） */
+/** 从音频转录：选择 MP3 → 确认界面（文件名/大小/说明）→ 启动 */
 async function chooseAudio(): Promise<void> {
   if (txStore.starting || txStore.running) return
   try {
     const path = await pickAudioFile()
     if (!path) return
-    await txStore.start(path)
+    const info = await getAudioFileInfo(path)
+    txStore.askConfirm(path, info.name, info.size_bytes)
   } catch {
     // 错误已写入 txStore.error，由错误提示条展示
   }
+}
+
+/** 确认后启动转录 */
+async function confirmStart(): Promise<void> {
+  const p = txStore.pendingConfirm
+  if (!p) return
+  await txStore.start(p.path)
+  await store.loadDocuments()
+}
+
+/** 完成态：跳转曲谱详情 */
+function goToDoc(docId: string | null): void {
+  if (docId) void router.push({ name: 'document', params: { docId } })
 }
 
 function onDragEnter(e: DragEvent): void {
@@ -132,13 +146,23 @@ function onDrop(e: DragEvent): void {
         >
           取消
         </button>
-        <span v-else-if="txStore.job.status === 'Completed'" class="text-green-400"
-          >✓ 已导入</span
+        <span
+          v-else-if="txStore.job.status === 'Completed'"
+          class="flex items-center gap-2"
         >
+          <span class="text-green-400">✓ 已导入</span>
+          <button
+            type="button"
+            class="rounded-lg bg-indigo-500/15 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-500/25"
+            @click="goToDoc(txStore.job.result_doc_id)"
+          >
+            查看曲谱
+          </button>
+        </span>
         <span
           v-else-if="txStore.job.status === 'Failed'"
-          class="text-xs text-red-400"
-          >{{ txStore.job.error_message || '转录失败' }}</span
+          class="max-w-[200px] text-xs text-red-400"
+          >{{ txStore.errorLabel(txStore.job.error_code, txStore.job.error_message || '转录失败') }}</span
         >
       </div>
     </div>
@@ -247,5 +271,42 @@ function onDrop(e: DragEvent): void {
         </li>
       </ul>
     </div>
+  <!-- 转录确认界面 -->
+  <div
+    v-if="txStore.pendingConfirm"
+    class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+    @click.self="txStore.dismissConfirm()"
+  >
+    <div class="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6">
+      <h2 class="text-lg font-semibold text-white">确认转录</h2>
+      <p class="mt-1 truncate text-sm text-slate-300">{{ txStore.pendingConfirm.name }}</p>
+      <p class="mt-1 text-xs text-slate-500">
+        {{ (txStore.pendingConfirm.size_bytes / 1024 / 1024).toFixed(1) }} MB
+      </p>
+      <ul class="mt-4 space-y-2 text-sm text-slate-400">
+        <li>• 音频仅在本地处理，不会上传或联网。</li>
+        <li>• 预计耗时：首次约 30–60 秒（含模型加载），之后约 10 秒。</li>
+        <li>• 钢琴独奏或旋律清晰的音频效果最佳；完整歌曲可能出现杂音符。</li>
+        <li>• 支持 MP3（≤200MB，≤10 分钟）。</li>
+      </ul>
+      <div class="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+          @click="txStore.dismissConfirm()"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          :disabled="txStore.starting"
+          @click="confirmStart"
+        >
+          {{ txStore.starting ? '启动中…' : '开始转录' }}
+        </button>
+      </div>
+    </div>
+  </div>
   </div>
 </template>

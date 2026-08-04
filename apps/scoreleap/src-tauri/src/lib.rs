@@ -185,6 +185,11 @@ fn list_keymap(state: State<'_, AppState>) -> Result<Vec<scoreleap_core::KeymapE
     scoreleap_core::list_keymap(&state)
 }
 
+#[tauri::command]
+fn get_audio_file_info(path: String) -> Result<scoreleap_core::AudioFileInfo, CoreError> {
+    scoreleap_core::audio_file_info(&path)
+}
+
 /// 转录服务状态（惰性创建；终态任务保留供前端查询）。
 struct TxState(Mutex<Option<TranscriptionService>>);
 
@@ -440,6 +445,7 @@ pub fn run() {
             start_audio_transcription,
             cancel_audio_transcription,
             get_audio_transcription_status,
+            get_audio_file_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
