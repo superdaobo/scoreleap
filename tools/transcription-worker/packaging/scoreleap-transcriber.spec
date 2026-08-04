@@ -1,25 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
-# scoreleap-transcriber PyInstaller spec（onedir，基于 Spike 决策 ADR-0007）
+# scoreleap-transcriber PyInstaller spec（onedir，依据 Spike 决策 ADR-0007）
+# 数据文件（saved_models 等）必须显式收集：collect_data_files
 import os
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
+datas = collect_data_files("basic_pitch")
+hiddenimports = collect_submodules("basic_pitch")
+
 a = Analysis(
-    ["..\\..\\..\\tools\\transcription-worker\\scoreleap_transcriber\\__main__.py"],
-    pathex=[os.path.dirname(os.path.abspath("__file__"))],
+    [os.path.abspath("packaging/entry.py")],
+    pathex=[os.path.abspath(".")],
     binaries=[],
-    datas=[],
-    hiddenimports=[
-        "basic_pitch",
-        "basic_pitch.inference",
-        "basic_pitch.predict",
-        "basic_pitch.icassp2022",
-        "mido",
-        "pretty_midi",
-        "librosa",
-        "soundfile",
-        "audioread",
-    ],
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
