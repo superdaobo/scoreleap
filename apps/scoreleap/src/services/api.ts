@@ -15,6 +15,7 @@ import type {
   PlaybackBackend,
   PlaybackStatus,
   TrackSummary,
+  TranscriptionJobView,
 } from '../types'
 
 /** 导入 MIDI 文件（命令 import_midi） */
@@ -120,4 +121,28 @@ export async function pickMidiFile(): Promise<string | null> {
     filters: [{ name: 'MIDI', extensions: ['mid', 'midi'] }],
   })
   return typeof selected === 'string' ? selected : null
+}
+
+/** 启动音频转录（命令 start_audio_transcription；单任务并发） */
+export function startAudioTranscription(path: string): Promise<string> {
+  return invoke<string>('start_audio_transcription', { path })
+}
+
+/** 取消当前转录任务（命令 cancel_audio_transcription） */
+export function cancelAudioTranscription(): Promise<void> {
+  return invoke<void>('cancel_audio_transcription')
+}
+
+/** 当前转录任务状态（命令 get_audio_transcription_status；终态保留） */
+export function getAudioTranscriptionStatus(): Promise<TranscriptionJobView | null> {
+  return invoke<TranscriptionJobView | null>('get_audio_transcription_status')
+}
+
+/** 选择 MP3 音频文件（打开对话框；取消返回 null） */
+export function pickAudioFile(): Promise<string | null> {
+  return open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: 'MP3 音频', extensions: ['mp3'] }],
+  })
 }

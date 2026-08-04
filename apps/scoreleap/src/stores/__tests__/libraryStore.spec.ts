@@ -19,6 +19,7 @@ const SAMPLE_DOCS: import('../../types').DocumentSummary[] = [
     note_count: 1109,
     duration_ms: 268235,
     bpm_range: [68, 120],
+    source_type: 'midi',
   },
   {
     doc_id: 'doc-2',
@@ -28,6 +29,7 @@ const SAMPLE_DOCS: import('../../types').DocumentSummary[] = [
     note_count: 8,
     duration_ms: 4000,
     bpm_range: [120, 120],
+    source_type: 'audio_transcription',
   },
 ]
 

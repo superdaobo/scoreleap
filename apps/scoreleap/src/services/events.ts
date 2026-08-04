@@ -5,7 +5,13 @@
  * 环境下测试 playbackStore 的状态映射逻辑。
  */
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { PlaybackProgress, PlaybackState } from '../types'
+import type {
+  PlaybackProgress,
+  PlaybackState,
+  TranscriptionCompletedPayload,
+  TranscriptionErrorPayload,
+  TranscriptionStagePayload,
+} from '../types'
 
 export type { UnlistenFn } from '@tauri-apps/api/event'
 
@@ -50,5 +56,41 @@ export function subscribePlaybackError(
   return subscribeImpl(
     'playback://error',
     handler as (payload: unknown) => void,
+  )
+}
+
+/** 订阅转录状态事件（transcription://state） */
+export function subscribeTranscriptionState(
+  handler: (payload: { job_id: string; status: string }) => void,
+): Promise<UnlistenFn> {
+  return subscribeImpl('transcription://state', (payload) =>
+    handler(payload as { job_id: string; status: string }),
+  )
+}
+
+/** 订阅转录阶段事件（transcription://stage） */
+export function subscribeTranscriptionStage(
+  handler: (payload: TranscriptionStagePayload) => void,
+): Promise<UnlistenFn> {
+  return subscribeImpl('transcription://stage', (payload) =>
+    handler(payload as TranscriptionStagePayload),
+  )
+}
+
+/** 订阅转录完成事件（transcription://completed） */
+export function subscribeTranscriptionCompleted(
+  handler: (payload: TranscriptionCompletedPayload) => void,
+): Promise<UnlistenFn> {
+  return subscribeImpl('transcription://completed', (payload) =>
+    handler(payload as TranscriptionCompletedPayload),
+  )
+}
+
+/** 订阅转录错误事件（transcription://error） */
+export function subscribeTranscriptionError(
+  handler: (payload: TranscriptionErrorPayload) => void,
+): Promise<UnlistenFn> {
+  return subscribeImpl('transcription://error', (payload) =>
+    handler(payload as TranscriptionErrorPayload),
   )
 }
