@@ -2,14 +2,15 @@
 //!
 //! 持有文档/序列/Profile/播放会话状态；命令适配层位于 apps/scoreleap/src-tauri。
 
-use scoreleap_arranger::{arrange, ArrangeStats, ArrangementOptions};
+use scoreleap_arranger::{arrange_pipeline, compile_notes, ArrangeStats, ArrangementOptions};
 use scoreleap_music_ir::{GameProfile, MusicDocument};
 use scoreleap_scheduler::{
     Clock, InputBackend, MockInputBackend, Scheduler, SchedulerEvent, SchedulerHandle, SystemClock,
 };
 use scoreleap_sequence::{CompiledSequence, PlaybackCommand, PlaybackState};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
@@ -49,9 +50,46 @@ pub struct AppState {
     pub sequences: Mutex<HashMap<String, CompiledSequence>>,
     pub profile: Mutex<Option<GameProfile>>,
     pub profile_dir: Mutex<std::path::PathBuf>,
+    /// 曲谱库目录（`<app_data>/library`）。
+    pub library_dir: Mutex<std::path::PathBuf>,
+    /// 编排后音符缓存（卷帘预览）。
+    pub notes_cache: Mutex<HashMap<String, Vec<NoteView>>>,
     pub scheduler: Mutex<Option<SchedulerHandle>>,
     /// 上次会话异常退出标记（启动自检）。
     pub crash_flag: Mutex<bool>,
+}
+
+/// 卷帘预览音符（编排后、编译前）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct NoteView {
+    pub note: u8,
+    pub start_us: i64,
+    pub duration_us: i64,
+}
+
+/// 曲谱库条目摘要。
+#[derive(Debug, Clone, Serialize)]
+pub struct DocumentSummary {
+    pub doc_id: String,
+    pub name: String,
+    pub format: String,
+    pub track_count: usize,
+    pub note_count: usize,
+    pub duration_ms: i64,
+    pub bpm_range: (f64, f64),
+}
+
+/// manifest 持久化条目。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestEntry {
+    pub doc_id: String,
+    pub name: String,
+    pub format: String,
+    pub track_count: usize,
+    pub note_count: usize,
+    pub duration_ms: i64,
+    pub bpm_range: (f64, f64),
+    pub imported_at: u64,
 }
 
 /// 导入结果摘要。
@@ -122,16 +160,124 @@ pub fn import_midi(state: &AppState, path: String) -> Result<ImportSummary, Core
         bpm_range: doc.bpm_range(),
         name,
     };
-    state.documents.lock().unwrap().insert(doc_id, doc);
+    state.documents.lock().unwrap().insert(doc_id.clone(), doc);
+
+    // 持久化：复制源文件到曲谱库并更新 manifest（失败不阻断导入，仅记录日志）
+    if let Err(e) = persist_import(state, &doc_id, &path, &summary) {
+        tracing::warn!("曲谱库持久化失败（本次会话仍可用）: {e}");
+    }
+
     Ok(summary)
+}
+
+/// 将导入的 MIDI 复制到曲谱库并更新 manifest（原子写）。
+fn persist_import(
+    state: &AppState,
+    doc_id: &str,
+    src_path: &str,
+    summary: &ImportSummary,
+) -> Result<(), CoreError> {
+    let dir = state.library_dir.lock().unwrap().clone();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| CoreError::Invalid(format!("创建曲谱库目录失败: {e}")))?;
+    let dest = dir.join(format!("{doc_id}.mid"));
+    std::fs::copy(src_path, &dest)
+        .map_err(|e| CoreError::Invalid(format!("复制 MIDI 失败: {e}")))?;
+
+    let mut entries = read_manifest(&dir);
+    entries.insert(
+        0,
+        ManifestEntry {
+            doc_id: doc_id.to_string(),
+            name: summary.name.clone(),
+            format: summary.format.clone(),
+            track_count: summary.track_count,
+            note_count: summary.note_count,
+            duration_ms: summary.duration_ms,
+            bpm_range: summary.bpm_range,
+            imported_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+        },
+    );
+    entries.truncate(50);
+    write_manifest(&dir, &entries)
+}
+
+/// 读取 manifest；不存在返回空；损坏时重置为空数组并记录日志。
+fn read_manifest(dir: &Path) -> Vec<ManifestEntry> {
+    let path = dir.join("manifest.json");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| {
+            tracing::warn!("manifest 损坏，重置为空: {e}");
+            let _ = std::fs::write(&path, "[]");
+            Vec::new()
+        }),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// 原子写 manifest。
+fn write_manifest(dir: &Path, entries: &[ManifestEntry]) -> Result<(), CoreError> {
+    let path = dir.join("manifest.json");
+    let tmp = dir.join("manifest.json.tmp");
+    let json = serde_json::to_string_pretty(entries)
+        .map_err(|e| CoreError::Invalid(format!("manifest 序列化失败: {e}")))?;
+    std::fs::write(&tmp, json)
+        .map_err(|e| CoreError::Invalid(format!("manifest 写入失败: {e}")))?;
+    std::fs::rename(&tmp, &path)
+        .map_err(|e| CoreError::Invalid(format!("manifest 替换失败: {e}")))?;
+    Ok(())
+}
+
+/// 曲谱库列表（过滤文件缺失条目）。
+pub fn list_documents(state: &AppState) -> Result<Vec<DocumentSummary>, CoreError> {
+    let dir = state.library_dir.lock().unwrap().clone();
+    let mut out = Vec::new();
+    let mut kept = Vec::new();
+    for e in read_manifest(&dir) {
+        if dir.join(format!("{}.mid", e.doc_id)).exists() {
+            kept.push(e.clone());
+            out.push(DocumentSummary {
+                doc_id: e.doc_id,
+                name: e.name,
+                format: e.format,
+                track_count: e.track_count,
+                note_count: e.note_count,
+                duration_ms: e.duration_ms,
+                bpm_range: e.bpm_range,
+            });
+        }
+    }
+    // 顺手清理已缺失条目
+    if kept.len() != out.len() {
+        let _ = write_manifest(&dir, &kept);
+    }
+    Ok(out)
+}
+
+/// 取文档；内存没有时从曲谱库自动加载。
+pub fn load_document(state: &AppState, doc_id: &str) -> Result<MusicDocument, CoreError> {
+    if let Some(doc) = state.documents.lock().unwrap().get(doc_id) {
+        return Ok(doc.clone());
+    }
+    let dir = state.library_dir.lock().unwrap().clone();
+    let path = dir.join(format!("{doc_id}.mid"));
+    let bytes =
+        std::fs::read(&path).map_err(|_| CoreError::DocumentNotFound(doc_id.to_string()))?;
+    let doc = scoreleap_midi::parse_midi(&bytes).map_err(CoreError::from)?;
+    state
+        .documents
+        .lock()
+        .unwrap()
+        .insert(doc_id.to_string(), doc.clone());
+    Ok(doc)
 }
 
 /// 轨道列表。
 pub fn get_tracks(state: &AppState, doc_id: String) -> Result<Vec<TrackSummary>, CoreError> {
-    let docs = state.documents.lock().unwrap();
-    let doc = docs
-        .get(&doc_id)
-        .ok_or_else(|| CoreError::DocumentNotFound(doc_id.clone()))?;
+    let doc = load_document(state, &doc_id)?;
     Ok(doc
         .tracks
         .iter()
@@ -151,15 +297,16 @@ pub fn compile(
     enabled_tracks: Vec<u16>,
     options: ArrangementOptions,
 ) -> Result<CompileSummary, CoreError> {
-    let doc = state
-        .documents
-        .lock()
-        .unwrap()
-        .get(&doc_id)
-        .ok_or_else(|| CoreError::DocumentNotFound(doc_id.clone()))?
-        .clone();
+    let doc = load_document(state, &doc_id)?;
     let profile = ensure_profile(state)?;
-    let (seq, stats) = arrange(&doc, &options, &profile, &enabled_tracks)?;
+    let (notes, stats) = arrange_pipeline(&doc, &options, &profile, &enabled_tracks)?;
+    let seq = compile_notes(
+        &notes,
+        &profile,
+        &doc,
+        &enabled_tracks,
+        stats.applied_transpose,
+    );
     let seq_id = format!("seq-{}", uuid::Uuid::new_v4());
     let summary = CompileSummary {
         seq_id: seq_id.clone(),
@@ -167,8 +314,30 @@ pub fn compile(
         duration_ms: seq.duration_us / 1000,
         stats,
     };
-    state.sequences.lock().unwrap().insert(seq_id, seq);
+    state.sequences.lock().unwrap().insert(seq_id.clone(), seq);
+    state.notes_cache.lock().unwrap().insert(
+        seq_id.clone(),
+        notes
+            .iter()
+            .map(|n| NoteView {
+                note: n.note,
+                start_us: n.start_us,
+                duration_us: n.duration_us,
+            })
+            .collect(),
+    );
     Ok(summary)
+}
+
+/// 卷帘预览音符（编译时缓存）。
+pub fn get_sequence_notes(state: &AppState, seq_id: String) -> Result<Vec<NoteView>, CoreError> {
+    state
+        .notes_cache
+        .lock()
+        .unwrap()
+        .get(&seq_id)
+        .cloned()
+        .ok_or_else(|| CoreError::SequenceNotFound(seq_id.clone()))
 }
 
 /// 取当前 Profile；未加载时自动加载默认（identity-v 或首个可用）Profile。

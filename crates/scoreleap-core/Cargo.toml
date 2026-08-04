@@ -22,3 +22,7 @@ uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true
+
+[dev-dependencies]
+midly = "0.5"
+tempfile = "3"

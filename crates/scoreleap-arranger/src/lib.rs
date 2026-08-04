@@ -79,13 +79,32 @@ pub struct ArrangeStats {
     pub applied_transpose: i8,
 }
 
-/// 执行完整编排管线。
+/// 执行完整编排管线（= arrange_pipeline + compile_notes）。
 pub fn arrange(
     doc: &MusicDocument,
     options: &ArrangementOptions,
     profile: &GameProfile,
     enabled_tracks: &[u16],
 ) -> Result<(CompiledSequence, ArrangeStats), ArrangeError> {
+    let (notes, stats) = arrange_pipeline(doc, options, profile, enabled_tracks)?;
+    let seq = compile_notes(
+        &notes,
+        profile,
+        doc,
+        enabled_tracks,
+        stats.applied_transpose,
+    );
+    Ok((seq, stats))
+}
+
+/// 编排管线（转调/折叠/量化/复音限制），返回编排后的音符与统计。
+/// 音符未做同刻去重与按键编译；卷帘预览可基于此数据。
+pub fn arrange_pipeline(
+    doc: &MusicDocument,
+    options: &ArrangementOptions,
+    profile: &GameProfile,
+    enabled_tracks: &[u16],
+) -> Result<(Vec<NoteEvent>, ArrangeStats), ArrangeError> {
     if enabled_tracks.is_empty() {
         return Err(ArrangeError::NoTracks);
     }
@@ -145,10 +164,7 @@ pub fn arrange(
     stats.dropped_polyphony = dropped;
     stats.output_notes = notes.len();
 
-    // 5. 编译
-    let seq = compile(&notes, profile, doc, enabled_tracks, transpose);
-
-    Ok((seq, stats))
+    Ok((notes, stats))
 }
 
 /// 自动转调：搜索 -24..=24，最大化音域内音符数；平手取绝对值小者。
@@ -301,8 +317,8 @@ fn polyphony_limit(notes: &mut Vec<NoteEvent>, max: usize, simplify: bool) -> us
     dropped
 }
 
-/// 编译为平台无关时间轴。
-fn compile(
+/// 编译为平台无关时间轴（同刻去重 + KeyDown/KeyUp + 重叠修正 + 排序）。
+pub fn compile_notes(
     notes: &[NoteEvent],
     profile: &GameProfile,
     doc: &MusicDocument,

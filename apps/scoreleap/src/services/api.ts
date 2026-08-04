@@ -6,8 +6,10 @@ import { open } from '@tauri-apps/plugin-dialog'
 import type {
   ArrangementOptions,
   CompileSummary,
+  DocumentSummary,
   GameProfile,
   ImportSummary,
+  NoteView,
   PlaybackBackend,
   PlaybackStatus,
   TrackSummary,
@@ -16,6 +18,16 @@ import type {
 /** 导入 MIDI 文件（命令 import_midi） */
 export function importMidi(path: string): Promise<ImportSummary> {
   return invoke<ImportSummary>('import_midi', { path })
+}
+
+/** 曲谱库列表（命令 list_documents；持久化曲谱库） */
+export function listDocuments(): Promise<DocumentSummary[]> {
+  return invoke<DocumentSummary[]>('list_documents')
+}
+
+/** 卷帘预览音符（命令 get_sequence_notes） */
+export function getSequenceNotes(seqId: string): Promise<NoteView[]> {
+  return invoke<NoteView[]>('get_sequence_notes', { seqId })
 }
 
 /** 轨道列表（命令 get_tracks） */

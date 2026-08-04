@@ -6,34 +6,30 @@ import * as api from '../../services/api'
 // 拦截 Tauri 命令层，避免在 Node 环境加载 @tauri-apps
 vi.mock('../../services/api', () => ({
   importMidi: vi.fn(),
+  listDocuments: vi.fn(),
   getTracks: vi.fn(),
 }))
 
-/** 安装内存版 localStorage（Node 环境没有） */
-function installLocalStorageStub(): void {
-  const data = new Map<string, string>()
-  const stub: Storage = {
-    get length() {
-      return data.size
-    },
-    clear: () => {
-      data.clear()
-    },
-    getItem: (key: string) => data.get(key) ?? null,
-    key: (index: number) => [...data.keys()][index] ?? null,
-    removeItem: (key: string) => {
-      data.delete(key)
-    },
-    setItem: (key: string, value: string) => {
-      data.set(key, String(value))
-    },
-  }
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: stub,
-    configurable: true,
-    writable: true,
-  })
-}
+const SAMPLE_DOCS: import('../../types').DocumentSummary[] = [
+  {
+    doc_id: 'doc-1',
+    name: '晴天.mid',
+    format: 'Parallel',
+    track_count: 3,
+    note_count: 1109,
+    duration_ms: 268235,
+    bpm_range: [68, 120],
+  },
+  {
+    doc_id: 'doc-2',
+    name: 'demo.mid',
+    format: 'SingleTrack',
+    track_count: 1,
+    note_count: 8,
+    duration_ms: 4000,
+    bpm_range: [120, 120],
+  },
+]
 
 const SAMPLE_TRACKS = [
   { id: 1, name: '旋律', note_count: 100, enabled: true },
@@ -43,10 +39,26 @@ const SAMPLE_TRACKS = [
 
 describe('libraryStore', () => {
   beforeEach(() => {
-    installLocalStorageStub()
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(api.listDocuments).mockResolvedValue(SAMPLE_DOCS)
     vi.mocked(api.getTracks).mockResolvedValue(SAMPLE_TRACKS)
+  })
+
+  it('loadDocuments 从后端拉取曲谱库', async () => {
+    const store = useLibraryStore()
+    expect(store.documents).toHaveLength(0)
+    await store.loadDocuments()
+    expect(store.documents).toHaveLength(2)
+    expect(store.documents[0].doc_id).toBe('doc-1')
+  })
+
+  it('loadDocuments 失败时写入 error', async () => {
+    vi.mocked(api.listDocuments).mockRejectedValue('后端不可用')
+    const store = useLibraryStore()
+    await store.loadDocuments()
+    expect(store.error).toBe('后端不可用')
+    expect(store.documents).toHaveLength(0)
   })
 
   it('selectDocument 默认启用全部轨道', async () => {
@@ -81,7 +93,7 @@ describe('libraryStore', () => {
     expect(store.enabledTrackIds('doc-x')).toEqual([1])
   })
 
-  it('importFile 成功后写入 documents 并持久化 localStorage', async () => {
+  it('importFile 成功后刷新曲谱库（以后端为准）', async () => {
     vi.mocked(api.importMidi).mockResolvedValue({
       doc_id: 'doc-9',
       name: 'demo.mid',
@@ -93,13 +105,10 @@ describe('libraryStore', () => {
     })
     const store = useLibraryStore()
     await store.importFile('C:/demo.mid')
-    expect(store.documents).toHaveLength(1)
-    expect(store.documents[0].doc_id).toBe('doc-9')
-    const stored = JSON.parse(
-      globalThis.localStorage.getItem('scoreleap-documents') ?? '[]',
-    ) as Array<{ doc_id: string }>
-    expect(stored).toHaveLength(1)
-    expect(stored[0].doc_id).toBe('doc-9')
+    expect(api.importMidi).toHaveBeenCalledWith('C:/demo.mid')
+    // 导入后触发重新拉取（后端 list_documents 返回全量）
+    expect(api.listDocuments).toHaveBeenCalled()
+    expect(store.documents).toHaveLength(2)
   })
 
   it('importFile 失败时写入 error 并抛出', async () => {
@@ -112,9 +121,10 @@ describe('libraryStore', () => {
 
   it('removeDocument 移除曲谱与启停状态', async () => {
     const store = useLibraryStore()
+    await store.loadDocuments()
     await store.selectDocument('doc-1')
     store.removeDocument('doc-1')
-    expect(store.documents).toHaveLength(0)
+    expect(store.documents).toHaveLength(1)
     expect(store.currentDocId).toBeNull()
     expect(store.enabledTracks['doc-1']).toBeUndefined()
   })
