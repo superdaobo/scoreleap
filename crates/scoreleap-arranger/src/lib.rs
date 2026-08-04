@@ -2,7 +2,7 @@
 //!
 //! 纯函数、可测试；不依赖平台与调度。
 
-use scoreleap_music_ir::{GameProfile, MusicDocument, NoteEvent};
+use scoreleap_music_ir::{GameProfile, KeyCode, MusicDocument, NoteEvent};
 use scoreleap_sequence::{CompiledSequence, PlatformAction, SequenceMeta};
 use serde::{Deserialize, Serialize};
 
@@ -309,9 +309,16 @@ fn compile(
     enabled_tracks: &[u16],
     transpose: i8,
 ) -> CompiledSequence {
-    let mut actions: Vec<PlatformAction> = Vec::with_capacity(notes.len() * 2);
+    // 同刻同音高去重：同一物理键无法同时按下两次（重复音/双轨同音）
+    let mut seen = std::collections::HashSet::new();
+    let deduped: Vec<&NoteEvent> = notes
+        .iter()
+        .filter(|n| seen.insert((n.start_us, n.note)))
+        .collect();
+
+    let mut actions: Vec<PlatformAction> = Vec::with_capacity(deduped.len() * 2);
     let mut duration_us = 0i64;
-    for n in notes {
+    for n in deduped {
         let key = match profile.keymap.get(&n.note) {
             Some(k) => *k,
             None => continue, // 理论不可达（折叠保证在音域内）
@@ -338,6 +345,10 @@ fn compile(
         (a.at_us(), order, key_of(a))
     });
 
+    // 同键重叠修正：连奏/踏板场景下同一物理键在 KeyUp 前再次 KeyDown，
+    // 会把前一个 KeyUp 提前到新 Down 之前（1ms 间隙），避免真实键盘卡键/自动重复。
+    fix_overlapping_keys(&mut actions);
+
     CompiledSequence {
         actions,
         duration_us,
@@ -363,6 +374,71 @@ fn key_of(a: &PlatformAction) -> u16 {
             }
         },
         PlatformAction::Gesture { .. } => 0,
+    }
+}
+
+/// 同键重叠修正（GAP = 1ms）：
+/// 同一物理键的连续两次按下之间，若上一次未抬起，把上一次 KeyUp 提前到新 Down 之前，
+/// 保证任何时刻每个物理键至多处于按下状态一次。
+const OVERLAP_GAP_US: i64 = 1_000;
+
+fn fix_overlapping_keys(actions: &mut [PlatformAction]) {
+    use std::collections::HashMap;
+    // 收集每个 key 的 Down/Up 索引（各自按出现顺序）
+    let mut downs: HashMap<KeyCode, Vec<usize>> = HashMap::new();
+    let mut ups: HashMap<KeyCode, Vec<usize>> = HashMap::new();
+    for (i, a) in actions.iter().enumerate() {
+        match a {
+            PlatformAction::KeyDown { key, .. } => downs.entry(*key).or_default().push(i),
+            PlatformAction::KeyUp { key, .. } => ups.entry(*key).or_default().push(i),
+            _ => {}
+        }
+    }
+    // 第 j 个 Down 对应第 j 个 Up；若相邻两个 Down 中前一个的 Up 晚于后一个 Down，
+    // 把前一个 Up 提前到后一个 Down 之前（1ms 间隙）。
+    let mut changed = false;
+    for (key, ds) in &downs {
+        let us = match ups.get(key) {
+            Some(u) => u,
+            None => continue,
+        };
+        for j in 0..ds.len().saturating_sub(1) {
+            let (d1, d2) = (ds[j], ds[j + 1]);
+            let u1 = match us.get(j) {
+                Some(u) => *u,
+                None => continue,
+            };
+            let (d1_at, d2_at) = match (actions[d1], actions[d2]) {
+                (
+                    PlatformAction::KeyDown { at_us: a1, .. },
+                    PlatformAction::KeyDown { at_us: a2, .. },
+                ) => (a1, a2),
+                _ => continue,
+            };
+            let u1_at = match actions[u1] {
+                PlatformAction::KeyUp { at_us, .. } => at_us,
+                _ => continue,
+            };
+            if u1_at > d2_at {
+                let new_up = (d2_at - OVERLAP_GAP_US).max(d1_at + 1);
+                actions[u1] = PlatformAction::KeyUp {
+                    at_us: new_up,
+                    key: *key,
+                };
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        // Up 提前可能破坏时间序，重新稳定排序
+        actions.sort_by_key(|a| {
+            let order = match a {
+                PlatformAction::KeyDown { .. } => 0,
+                PlatformAction::KeyUp { .. } => 1,
+                PlatformAction::Gesture { .. } => 0,
+            };
+            (a.at_us(), order, key_of(a))
+        });
     }
 }
 
@@ -568,6 +644,44 @@ mod tests {
             arrange(&doc, &ArrangementOptions::default(), &test_profile(), &[0]).unwrap();
         assert_eq!(stats.output_notes, 2);
         assert_eq!(seq.actions.len(), 4);
+    }
+
+    #[test]
+    fn overlapping_same_note_keyup_pulled_forward() {
+        // 同音高重叠（连奏/踏板）：第二个 Down 在第一个 KeyUp 之前
+        let doc = doc_with(vec![
+            note(60, 0, 800_000, 100),
+            note(60, 500_000, 800_000, 100),
+        ]);
+        let (seq, _) =
+            arrange(&doc, &ArrangementOptions::default(), &test_profile(), &[0]).unwrap();
+        assert_eq!(seq.actions.len(), 4);
+        // 第一个 KeyUp 被提前到第二个 Down 前 1ms = 499_000
+        let first_up = seq
+            .actions
+            .iter()
+            .find_map(|a| match a {
+                PlatformAction::KeyUp { at_us, .. } if *at_us < 500_000 => Some(*at_us),
+                _ => None,
+            })
+            .expect("应有被提前的 KeyUp");
+        assert_eq!(first_up, 499_000);
+        // 全局校验：任何时刻同一 key 不重叠
+        let mut open: std::collections::HashMap<scoreleap_music_ir::KeyCode, i64> =
+            Default::default();
+        for a in &seq.actions {
+            match a {
+                PlatformAction::KeyDown { at_us, key } => {
+                    if let Some(prev_up) = open.get(key) {
+                        assert!(at_us >= prev_up, "同键重叠未修正");
+                    }
+                }
+                PlatformAction::KeyUp { at_us, key } => {
+                    open.insert(*key, *at_us);
+                }
+                _ => {}
+            }
+        }
     }
 
     #[test]
