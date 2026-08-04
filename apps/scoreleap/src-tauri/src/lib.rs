@@ -3,9 +3,14 @@
 //! 注意：命令函数**必须为非 pub**——tauri-macros 对 pub 命令生成
 //! `#[macro_export]` + `pub use`，与 rustc 的宏命名空间检查冲突（E0255）。
 
+use std::sync::{Arc, Mutex};
+
 use scoreleap_core::{AppState, CoreError};
 use scoreleap_sequence::PlaybackState;
-use tauri::{Emitter, Manager, State};
+use scoreleap_transcription::{
+    TranscriptionError, TranscriptionEvent, TranscriptionService, WorkerSpec,
+};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// 初始化 tracing 日志（stderr 不可见时写入应用数据目录 logs/，便于诊断）。
@@ -180,6 +185,157 @@ fn list_keymap(state: State<'_, AppState>) -> Result<Vec<scoreleap_core::KeymapE
     scoreleap_core::list_keymap(&state)
 }
 
+/// 转录服务状态（惰性创建；终态任务保留供前端查询）。
+struct TxState(Mutex<Option<TranscriptionService>>);
+
+/// Worker 可执行文件路径解析：环境变量 → 打包 sidecar → 开发目录。
+fn resolve_worker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    if let Ok(p) = std::env::var("SCORELEAP_WORKER_PATH") {
+        let p = std::path::PathBuf::from(p);
+        if p.exists() {
+            return Some(p);
+        }
+        tracing::warn!("SCORELEAP_WORKER_PATH 不存在: {}", p.display());
+    }
+    // 打包 sidecar：externalBin 输出到 resource_dir 的上级（tauri 约定）
+    if let Some(p) = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("../scoreleap-transcriber.exe"))
+    {
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // 开发目录（venv console script）
+    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tools/transcription-worker/.venv/Scripts/scoreleap-transcriber.exe");
+    dev.exists().then_some(dev)
+}
+
+fn get_or_init_transcription(
+    app: &AppHandle,
+    tx: &State<'_, TxState>,
+) -> Result<TranscriptionService, TranscriptionError> {
+    let mut guard = tx.0.lock().unwrap();
+    if let Some(svc) = guard.as_ref() {
+        return Ok(svc.clone());
+    }
+    // 解析 Worker 路径
+    let worker_program = resolve_worker_path(app).ok_or_else(|| {
+        TranscriptionError::new(
+            scoreleap_transcription::TranscriptionErrorCode::WorkerNotFound,
+            "未找到转录 Worker（设置 SCORELEAP_WORKER_PATH 或安装完整版）",
+        )
+    })?;
+    tracing::info!("转录 Worker: {}", worker_program.display());
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("transcriptions");
+    let handle = app.clone();
+    let on_event = Arc::new(move |event: TranscriptionEvent| {
+        let (name, payload) = match event {
+            TranscriptionEvent::State { job_id, status } => (
+                "transcription://state",
+                serde_json::json!({ "job_id": job_id, "status": status }),
+            ),
+            TranscriptionEvent::Stage {
+                job_id,
+                stage,
+                message,
+            } => (
+                "transcription://stage",
+                serde_json::json!({ "job_id": job_id, "stage": stage, "message": message }),
+            ),
+            TranscriptionEvent::Completed {
+                job_id,
+                doc_id,
+                midi_path,
+                note_count,
+                elapsed_ms,
+            } => (
+                "transcription://completed",
+                serde_json::json!({ "job_id": job_id, "doc_id": doc_id, "midi_path": midi_path, "note_count": note_count, "elapsed_ms": elapsed_ms }),
+            ),
+            TranscriptionEvent::Error {
+                job_id,
+                code,
+                message,
+            } => (
+                "transcription://error",
+                serde_json::json!({ "job_id": job_id, "code": code, "message": message }),
+            ),
+        };
+        let _ = handle.emit(name, payload);
+    });
+    let handle2 = app.clone();
+    let importer = Arc::new(
+        move |midi_path: &str, display_name: &str| -> Result<String, String> {
+            let core_state = handle2.state::<AppState>();
+            scoreleap_core::import_midi_from_path(
+                &core_state,
+                midi_path,
+                display_name,
+                "audio_transcription",
+            )
+            .map(|s| s.doc_id)
+            .map_err(|e| e.to_string())
+        },
+    );
+    let svc = TranscriptionService::new(
+        data_dir,
+        WorkerSpec {
+            program: worker_program.to_string_lossy().to_string(),
+            args: vec![],
+        },
+        on_event,
+        importer,
+    );
+    *guard = Some(svc.clone());
+    Ok(svc)
+}
+
+/// 启动音频转录（返回 job_id；单任务并发）。
+#[tauri::command]
+fn start_audio_transcription(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tx: State<'_, TxState>,
+    path: String,
+) -> Result<String, TranscriptionError> {
+    let _ = &state;
+    let svc = get_or_init_transcription(&app, &tx)?;
+    svc.start(&path)
+}
+
+/// 取消当前转录任务。
+#[tauri::command]
+fn cancel_audio_transcription(
+    app: AppHandle,
+    tx: State<'_, TxState>,
+) -> Result<(), TranscriptionError> {
+    let _ = &app;
+    let guard = tx.0.lock().unwrap();
+    match guard.as_ref() {
+        Some(svc) => svc.cancel(),
+        None => Err(TranscriptionError::new(
+            scoreleap_transcription::TranscriptionErrorCode::JobCancelled,
+            "没有进行中的转录任务",
+        )),
+    }
+}
+
+/// 当前转录任务状态（终态任务保留，供前端展示）。
+#[tauri::command]
+fn get_audio_transcription_status(
+    tx: State<'_, TxState>,
+) -> Option<scoreleap_transcription::TranscriptionJob> {
+    tx.0.lock().unwrap().as_ref().and_then(|svc| svc.status())
+}
+
 pub fn run() {
     init_logging();
     install_panic_hook();
@@ -189,6 +345,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_scoreleap_input::init())
         .manage(AppState::default())
+        .manage(TxState(Mutex::new(None)))
         .setup(|app| {
             // Profile 目录查找优先级：资源目录（安装包内置）→ 仓库开发目录 → 用户数据目录
             let mut profiles_dir: Option<std::path::PathBuf> = None;
@@ -280,6 +437,9 @@ pub fn run() {
             test_key,
             check_foreground,
             list_keymap,
+            start_audio_transcription,
+            cancel_audio_transcription,
+            get_audio_transcription_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

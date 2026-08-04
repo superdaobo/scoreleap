@@ -66,6 +66,13 @@ fn setup() -> (tempfile::TempDir, AppState) {
     (dir, state)
 }
 
+/// 最小有效 SMF format 0（division 96，1 个 note_on/off）。
+const VALID_MIDI: &[u8] = &[
+    0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x60, //
+    0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x0B, //
+    0x00, 0x90, 0x3C, 0x64, 0x60, 0x80, 0x3C, 0x00, 0x00, 0xFF, 0x2F, 0x00,
+];
+
 #[test]
 fn import_then_list_roundtrip() {
     let (dir, state) = setup();
@@ -147,6 +154,34 @@ fn compile_caches_sequence_notes() {
 
     // 未知 seq_id 报错
     assert!(get_sequence_notes(&state, "seq-nope".into()).is_err());
+}
+
+#[test]
+fn transcription_import_sets_source_type() {
+    let (dir, state) = setup();
+    // 构造一个最小有效 MIDI 并写入临时路径（模拟转录产物）
+    let lib = dir.path().join("library");
+    std::fs::create_dir_all(&lib).unwrap();
+    let generated = dir.path().join("generated.mid");
+    std::fs::write(&generated, VALID_MIDI).unwrap();
+
+    let summary = scoreleap_core::import_midi_from_path(
+        &state,
+        generated.to_str().unwrap(),
+        "测试（音频转录）",
+        "audio_transcription",
+    )
+    .unwrap();
+    assert_eq!(summary.source_type, "audio_transcription");
+    assert_eq!(summary.name, "测试（音频转录）");
+
+    // 重启后（新 AppState 从 manifest 读取）source_type 保留
+    let state2 = scoreleap_core::AppState::default();
+    *state2.library_dir.lock().unwrap() = lib;
+    let docs = scoreleap_core::list_documents(&state2).unwrap();
+    assert_eq!(docs.len(), 1);
+    assert_eq!(docs[0].source_type, "audio_transcription");
+    assert_eq!(docs[0].name, "测试（音频转录）");
 }
 
 #[test]
