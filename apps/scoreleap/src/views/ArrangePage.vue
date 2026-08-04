@@ -3,10 +3,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaybackStore } from '../stores/playbackStore'
-import { compile as compileApi, currentProfile, loadProfile, listProfiles } from '../services/api'
+import { compile as compileApi, currentProfile, getSequenceNotes, loadProfile, listProfiles } from '../services/api'
 import type {
   ArrangementOptions,
   CompileSummary,
+  NoteView,
   QuantizeGrid,
   RangeStrategy,
 } from '../types'
@@ -49,6 +50,7 @@ const quantize = ref<QuantizeGrid | null>(null)
 const simplify = ref(true)
 
 const compileSummary = ref<CompileSummary | null>(null)
+const notesData = ref<NoteView[]>([])
 const compiling = ref(false)
 const mockBackend = ref(false)
 
@@ -72,8 +74,17 @@ async function doCompile(): Promise<void> {
   }
   compiling.value = true
   store.error = null
+  notesData.value = []
   try {
     compileSummary.value = await compileApi(docId.value, ids, options)
+    // 获取卷帘预览音符数据（编译缓存）
+    try {
+      notesData.value = await getSequenceNotes(compileSummary.value.seq_id)
+    } catch (e) {
+      // 音符数据获取失败不阻断编译（仅预览缺失）
+      console.warn('获取卷帘音符失败:', e)
+      notesData.value = []
+    }
   } catch (e) {
     store.error = String(e)
   } finally {
@@ -230,15 +241,14 @@ function draw(): void {
   }
   ctx.textAlign = 'left'
 
-  // 音符矩形：后端当前未开放序列音符查询接口，数据源暂为空（预留）
-  // const notes: { startUs: number; durationUs: number; note: number }[] = []
-  // for (const n of notes) {
-  //   const x = (n.startUs / 1e6 / durationSec) * VIEW_W
-  //   const w = Math.max(2, (n.durationUs / 1e6 / durationSec) * VIEW_W)
-  //   const y = VIEW_H - (n.note - PITCH_LOW + 0.5) * rowH
-  //   ctx.fillStyle = 'rgba(99, 102, 241, 0.85)'
-  //   ctx.fillRect(x, y - rowH / 2 + 1, w, rowH - 2)
-  // }
+  // 音符矩形（数据源：get_sequence_notes 编译缓存）
+  for (const n of notesData.value) {
+    const x = (n.start_us / 1e6 / durationSec) * VIEW_W
+    const w = Math.max(2, (n.duration_us / 1e6 / durationSec) * VIEW_W)
+    const y = VIEW_H - (n.note - PITCH_LOW + 0.5) * rowH
+    ctx.fillStyle = 'rgba(99, 102, 241, 0.85)'
+    ctx.fillRect(x, y - rowH / 2 + 1, w, rowH - 2)
+  }
 
   // 当前播放位置竖线（来自 playbackStore.positionUs）
   if (playback.positionUs > 0) {
@@ -438,7 +448,7 @@ const stats = computed(() => compileSummary.value?.stats ?? null)
             style="height: 320px"
           ></canvas>
           <p class="mt-2 text-xs text-slate-500">
-            音符数据由后端序列接口提供（当前版本暂未开放），此处显示时间轴与播放进度。
+            音符为编排后预览（{{ notesData.length.toLocaleString() }} 个）；红色竖线为当前播放位置。
           </p>
         </div>
 

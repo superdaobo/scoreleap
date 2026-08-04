@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLibraryStore } from '../stores/libraryStore'
 import { pickMidiFile } from '../services/api'
@@ -11,6 +11,11 @@ const importing = ref(false)
 const dragging = ref(false)
 
 const hasDocuments = computed(() => store.documents.length > 0)
+
+// 进入页面时从后端持久化曲谱库加载
+onMounted(() => {
+  void store.loadDocuments()
+})
 
 async function chooseFile(): Promise<void> {
   if (importing.value) return

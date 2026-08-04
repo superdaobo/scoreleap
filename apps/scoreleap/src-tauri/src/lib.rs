@@ -43,6 +43,21 @@ fn import_midi(
 }
 
 #[tauri::command]
+fn list_documents(
+    state: State<'_, AppState>,
+) -> Result<Vec<scoreleap_core::DocumentSummary>, CoreError> {
+    scoreleap_core::list_documents(&state)
+}
+
+#[tauri::command]
+fn get_sequence_notes(
+    state: State<'_, AppState>,
+    seq_id: String,
+) -> Result<Vec<scoreleap_core::NoteView>, CoreError> {
+    scoreleap_core::get_sequence_notes(&state, seq_id)
+}
+
+#[tauri::command]
 fn get_tracks(
     state: State<'_, AppState>,
     doc_id: String,
@@ -159,6 +174,15 @@ pub fn run() {
             });
             *app.state::<AppState>().profile_dir.lock().unwrap() = profiles_dir;
 
+            // 曲谱库目录：<app_data>/library
+            let library_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join("library");
+            let _ = std::fs::create_dir_all(&library_dir);
+            *app.state::<AppState>().library_dir.lock().unwrap() = library_dir;
+
             // 启动自检：检测上次会话异常退出标记
             let crashed = crash_flag_path().exists();
             *app.state::<AppState>().crash_flag.lock().unwrap() = crashed;
@@ -190,7 +214,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             import_midi,
+            list_documents,
             get_tracks,
+            get_sequence_notes,
             compile,
             start_playback,
             pause_playback,

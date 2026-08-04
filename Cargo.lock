@@ -2645,7 +2645,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "scoreleap"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "scoreleap-arranger",
  "scoreleap-core",
@@ -2665,7 +2665,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-arranger"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "scoreleap-game-profile",
  "scoreleap-midi",
@@ -2678,8 +2678,9 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
+ "midly",
  "scoreleap-arranger",
  "scoreleap-game-profile",
  "scoreleap-midi",
@@ -2690,6 +2691,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-plugin-scoreleap-input",
+ "tempfile",
  "thiserror 2.0.19",
  "tracing",
  "uuid",
@@ -2698,7 +2700,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-game-profile"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "scoreleap-music-ir",
  "serde",
@@ -2708,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-midi"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "midly",
  "scoreleap-music-ir",
@@ -2717,7 +2719,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-music-ir"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2725,7 +2727,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-scheduler"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "scoreleap-music-ir",
  "scoreleap-sequence",
@@ -2736,7 +2738,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-sequence"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "scoreleap-music-ir",
  "serde",
@@ -3395,7 +3397,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-scoreleap-input"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "scoreleap-music-ir",
  "scoreleap-scheduler",
@@ -3520,6 +3522,19 @@ dependencies = [
  "dunce",
  "embed-resource",
  "toml 1.1.4+spec-1.1.0",
+]
+
+[[package]]
+name = "tempfile"
+version = "3.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
+dependencies = [
+ "fastrand",
+ "getrandom 0.4.3",
+ "once_cell",
+ "rustix",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

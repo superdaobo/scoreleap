@@ -14,6 +14,24 @@ export interface ImportSummary {
   bpm_range: [number, number]
 }
 
+/** 曲谱库条目摘要（list_documents 返回值；重启后从后端持久化曲谱库读取） */
+export interface DocumentSummary {
+  doc_id: string
+  name: string
+  format: string
+  track_count: number
+  note_count: number
+  duration_ms: number
+  bpm_range: [number, number]
+}
+
+/** 卷帘预览音符（get_sequence_notes 返回值；编排后、按键编译前） */
+export interface NoteView {
+  note: number
+  start_us: number
+  duration_us: number
+}
+
 /** 轨道摘要（get_tracks 返回值） */
 export interface TrackSummary {
   id: number
