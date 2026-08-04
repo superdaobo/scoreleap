@@ -146,3 +146,11 @@ export function pickAudioFile(): Promise<string | null> {
     filters: [{ name: 'MP3 音频', extensions: ['mp3'] }],
   })
 }
+
+/** 音频文件信息（命令 get_audio_file_info；确认界面显示大小） */
+export function getAudioFileInfo(path: string): Promise<{
+  name: string
+  size_bytes: number
+}> {
+  return invoke<{ name: string; size_bytes: number }>('get_audio_file_info', { path })
+}

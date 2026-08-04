@@ -29,6 +29,33 @@ export const STAGE_INDETERMINATE: Record<string, boolean> = {
   transcribing: true,
 }
 
+/** 错误码 → 用户可读文案（#47 验收：错误区分） */
+export const ERROR_LABELS: Record<string, string> = {
+  WORKER_NOT_FOUND: '未找到转录组件（请重新安装或设置 SCORELEAP_WORKER_PATH）',
+  WORKER_START_FAILED: '转录组件启动失败',
+  TRANSCRIPTION_BUSY: '已有转录任务在进行中，请稍后再试',
+  INVALID_AUDIO_PATH: '音频文件不存在或无法读取',
+  UNSUPPORTED_AUDIO_FORMAT: '仅支持 MP3 格式',
+  AUDIO_FILE_TOO_LARGE: '音频文件超过 200MB 上限',
+  AUDIO_TOO_LONG: '音频超过 10 分钟上限',
+  AUDIO_DECODE_FAILED: '音频解码失败（文件可能已损坏或不是有效 MP3）',
+  MODEL_LOAD_FAILED: '本地模型加载失败',
+  INFERENCE_FAILED: '音符识别失败',
+  MIDI_WRITE_FAILED: 'MIDI 生成失败',
+  MIDI_VALIDATION_FAILED: '生成的 MIDI 无法通过校验',
+  JOB_CANCELLED: '任务已取消',
+  WORKER_PROTOCOL_ERROR: '转录组件通信异常',
+  WORKER_EXITED_UNEXPECTEDLY: '转录组件异常退出',
+  INTERNAL_ERROR: '内部错误，请查看日志',
+}
+
+/** 待确认的转录任务（确认界面数据） */
+export interface PendingConfirm {
+  path: string
+  name: string
+  size_bytes: number
+}
+
 export const useTranscriptionStore = defineStore('transcription', () => {
   /** 当前/最近一次转录任务（终态保留展示） */
   const job = ref<TranscriptionJobView | null>(null)
@@ -36,6 +63,8 @@ export const useTranscriptionStore = defineStore('transcription', () => {
   const error = ref<string | null>(null)
   /** 是否正在发起转录（避免重复点击） */
   const starting = ref(false)
+  /** 待确认的转录任务（确认界面显示；null = 未在选择状态） */
+  const pendingConfirm = ref<PendingConfirm | null>(null)
   /** 事件订阅句柄（测试注入用） */
   const unlisteners = ref<UnlistenFn[]>([])
 
@@ -108,12 +137,29 @@ export const useTranscriptionStore = defineStore('transcription', () => {
       if (view && view.job_id === jobId) {
         job.value = view
       }
+      pendingConfirm.value = null
     } catch (e) {
       error.value = String(e)
       throw e
     } finally {
       starting.value = false
     }
+  }
+
+  /** 设置待确认任务（选择 MP3 后调用） */
+  function askConfirm(path: string, name: string, sizeBytes: number): void {
+    pendingConfirm.value = { path, name, size_bytes: sizeBytes }
+  }
+
+  /** 关闭确认界面 */
+  function dismissConfirm(): void {
+    pendingConfirm.value = null
+  }
+
+  /** 错误文案（区分结构化错误码；未知码回退原文） */
+  function errorLabel(code: string | null, fallback: string): string {
+    if (!code) return fallback
+    return ERROR_LABELS[code] ?? fallback
   }
 
   /** 取消当前转录任务 */
@@ -156,6 +202,10 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     cancel,
     restore,
     clearError,
+    pendingConfirm,
+    askConfirm,
+    dismissConfirm,
+    errorLabel,
   }
 })
 

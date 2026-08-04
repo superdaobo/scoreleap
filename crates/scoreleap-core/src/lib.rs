@@ -490,6 +490,34 @@ pub fn current_profile(state: &AppState) -> Result<Option<GameProfile>, CoreErro
 
 /// 测试按键注入：向当前前台窗口发送一次按下+抬起（用于排查 SendInput 被 UIPI 阻止）。
 /// scan：Windows 扫描码（十进制）。返回注入结果信息。
+/// 音频文件信息（转录确认界面使用：存在性 + 名称 + 大小）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AudioFileInfo {
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+pub fn audio_file_info(path: &str) -> Result<AudioFileInfo, CoreError> {
+    let p = std::path::Path::new(path);
+    if !p.exists() {
+        return Err(CoreError::Invalid("输入文件不存在".into()));
+    }
+    if !p.is_file() {
+        return Err(CoreError::Invalid("输入不是普通文件".into()));
+    }
+    let size = std::fs::metadata(p)
+        .map(|m| m.len())
+        .map_err(|e| CoreError::Invalid(format!("读取文件信息失败: {e}")))?;
+    let name = p
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "audio.mp3".into());
+    Ok(AudioFileInfo {
+        name,
+        size_bytes: size,
+    })
+}
+
 pub fn test_key(scan: u16) -> Result<String, CoreError> {
     #[cfg(windows)]
     {
