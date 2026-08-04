@@ -144,7 +144,7 @@ pub fn get_tracks(state: &AppState, doc_id: String) -> Result<Vec<TrackSummary>,
         .collect())
 }
 
-/// 执行编排并缓存序列。
+/// 执行编排并缓存序列。Profile 未加载时自动加载默认（首个可用）Profile。
 pub fn compile(
     state: &AppState,
     doc_id: String,
@@ -158,12 +158,7 @@ pub fn compile(
         .get(&doc_id)
         .ok_or_else(|| CoreError::DocumentNotFound(doc_id.clone()))?
         .clone();
-    let profile = state
-        .profile
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or(CoreError::NoProfile)?;
+    let profile = ensure_profile(state)?;
     let (seq, stats) = arrange(&doc, &options, &profile, &enabled_tracks)?;
     let seq_id = format!("seq-{}", uuid::Uuid::new_v4());
     let summary = CompileSummary {
@@ -174,6 +169,24 @@ pub fn compile(
     };
     state.sequences.lock().unwrap().insert(seq_id, seq);
     Ok(summary)
+}
+
+/// 取当前 Profile；未加载时自动加载默认（identity-v 或首个可用）Profile。
+pub fn ensure_profile(state: &AppState) -> Result<GameProfile, CoreError> {
+    if let Some(p) = state.profile.lock().unwrap().clone() {
+        return Ok(p);
+    }
+    let dir = state.profile_dir.lock().unwrap().clone();
+    let mut store = scoreleap_game_profile::ProfileStore::new(dir);
+    let ids = store.list_ids().map_err(CoreError::from)?;
+    let id = ids
+        .iter()
+        .find(|id| id.as_str() == "identity-v")
+        .or_else(|| ids.first())
+        .ok_or(CoreError::NoProfile)?;
+    let p = store.load(id).map_err(CoreError::from)?;
+    *state.profile.lock().unwrap() = Some(p.clone());
+    Ok(p)
 }
 
 /// 开始播放（3 秒倒计时后执行；backend="mock" 用于测试）。

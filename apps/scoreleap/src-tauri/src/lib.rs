@@ -125,12 +125,30 @@ pub fn run() {
         .plugin(tauri_plugin_scoreleap_input::init())
         .manage(AppState::default())
         .setup(|app| {
-            // Profile 目录：优先仓库内置 game-profiles，否则用数据目录
-            let builtin =
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../game-profiles");
-            let profiles_dir = if builtin.join("identity-v/profile.json").exists() {
-                builtin
-            } else {
+            // Profile 目录查找优先级：资源目录（安装包内置）→ 仓库开发目录 → 用户数据目录
+            let mut profiles_dir: Option<std::path::PathBuf> = None;
+            let candidates = [
+                app.path()
+                    .resource_dir()
+                    .ok()
+                    .map(|d| d.join("game-profiles")),
+                Some(
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../../game-profiles"),
+                ),
+                app.path()
+                    .app_data_dir()
+                    .ok()
+                    .map(|d| d.join("game-profiles")),
+            ];
+            for c in candidates.into_iter().flatten() {
+                if c.join("identity-v/profile.json").exists() {
+                    tracing::info!("使用 Profile 目录: {}", c.display());
+                    profiles_dir = Some(c);
+                    break;
+                }
+            }
+            let profiles_dir = profiles_dir.unwrap_or_else(|| {
                 let data_dir = app
                     .path()
                     .app_data_dir()
@@ -138,7 +156,7 @@ pub fn run() {
                 let p = data_dir.join("game-profiles");
                 let _ = std::fs::create_dir_all(&p);
                 p
-            };
+            });
             *app.state::<AppState>().profile_dir.lock().unwrap() = profiles_dir;
 
             // 启动自检：检测上次会话异常退出标记

@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useLibraryStore } from '../stores/libraryStore'
 import { usePlaybackStore } from '../stores/playbackStore'
-import { compile as compileApi } from '../services/api'
+import { compile as compileApi, currentProfile, loadProfile, listProfiles } from '../services/api'
 import type {
   ArrangementOptions,
   CompileSummary,
@@ -19,6 +19,24 @@ const playback = usePlaybackStore()
 const docId = computed(() =>
   typeof route.query.docId === 'string' ? route.query.docId : store.currentDocId ?? '',
 )
+
+// ---------------------------------------------------------------------------
+// Profile 确保加载（后端 compile 也有兑底，这里提前加载以便显示更准确的错误）
+// ---------------------------------------------------------------------------
+async function ensureProfile(): Promise<void> {
+  try {
+    const cur = await currentProfile()
+    if (cur) return
+    const profiles = await listProfiles()
+    if (profiles.length > 0) {
+      await loadProfile(profiles[0])
+    } else {
+      store.error = '未找到可用的游戏 Profile（缺少 game-profiles 目录）。'
+    }
+  } catch (e) {
+    store.error = String(e)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 转换参数
@@ -241,6 +259,7 @@ function loop(): void {
 }
 
 onMounted(() => {
+  ensureProfile()
   loop()
 })
 
