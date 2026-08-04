@@ -170,6 +170,16 @@ fn test_key(scan: u16) -> Result<String, CoreError> {
     scoreleap_core::test_key(scan)
 }
 
+#[tauri::command]
+fn check_foreground() -> Result<scoreleap_core::ForegroundInfo, CoreError> {
+    scoreleap_core::check_foreground()
+}
+
+#[tauri::command]
+fn list_keymap(state: State<'_, AppState>) -> Result<Vec<scoreleap_core::KeymapEntry>, CoreError> {
+    scoreleap_core::list_keymap(&state)
+}
+
 pub fn run() {
     init_logging();
     install_panic_hook();
@@ -268,6 +278,8 @@ pub fn run() {
             current_profile,
             get_crash_flag,
             test_key,
+            check_foreground,
+            list_keymap,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

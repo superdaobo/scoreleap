@@ -32,6 +32,22 @@ export interface NoteView {
   duration_us: number
 }
 
+/** 前台窗口信息（check_foreground 返回值；UIPI 提权检测） */
+export interface ForegroundInfo {
+  title: string
+  pid: number
+  elevated: boolean
+  our_elevated: boolean
+}
+
+/** 键位条目（list_keymap 返回值；测试页逐键测试） */
+export interface KeymapEntry {
+  note: number
+  scan: number
+  extended: boolean
+  label: string
+}
+
 /** 轨道摘要（get_tracks 返回值） */
 export interface TrackSummary {
   id: number

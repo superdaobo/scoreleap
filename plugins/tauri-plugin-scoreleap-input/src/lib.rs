@@ -6,7 +6,7 @@ use tauri::plugin::{Builder, TauriPlugin};
 use tauri::Runtime;
 
 #[cfg(windows)]
-pub use desktop::{test_inject_key, SendInputBackend};
+pub use desktop::{check_foreground_info, test_inject_key, SendInputBackend};
 
 #[cfg(windows)]
 mod desktop;
