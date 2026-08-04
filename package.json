@@ -1,7 +1,7 @@
 {
   "name": "scoreleap",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "packageManager": "pnpm@10.33.4",
   "scripts": {
@@ -14,4 +14,5 @@
     "test:e2e": "pnpm --filter scoreleap-app test:e2e"
   }
 }
+
 
