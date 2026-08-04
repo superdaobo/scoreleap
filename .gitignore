@@ -57,3 +57,7 @@ tools/transcription-worker/build/
 tools/transcription-worker/dist/
 experiments/basic-pitch-windows/out/
 tools/transcription-worker/*.egg-info/
+
+# 打包用转录 Worker（构建时复制，不提交）
+apps/scoreleap/src-tauri/resources/scoreleap-transcriber/
+
