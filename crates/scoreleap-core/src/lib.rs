@@ -512,7 +512,10 @@ pub fn audio_file_info(path: &str) -> Result<AudioFileInfo, CoreError> {
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "audio.mp3".into());
-    Ok(AudioFileInfo { name, size_bytes: size })
+    Ok(AudioFileInfo {
+        name,
+        size_bytes: size,
+    })
 }
 
 pub fn test_key(scan: u16) -> Result<String, CoreError> {
