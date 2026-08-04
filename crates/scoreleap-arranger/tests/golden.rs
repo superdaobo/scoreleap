@@ -34,6 +34,67 @@ fn identity_v_profile_valid() {
     assert_eq!(p.midi_high, 83);
 }
 
+/// 构造单轨文档：给定音符（MIDI note, 起始 us, 时值 us）。
+fn single_track_doc(notes: &[(u8, i64, i64)]) -> scoreleap_music_ir::MusicDocument {
+    use scoreleap_music_ir::{MidiFormat, NoteEvent, TempoEvent, Track};
+    let events = notes
+        .iter()
+        .map(|(note, start_us, duration_us)| NoteEvent {
+            track_id: 0,
+            note: *note,
+            velocity: 100,
+            start_us: *start_us,
+            duration_us: *duration_us,
+        })
+        .collect();
+    let track = Track {
+        id: 0,
+        name: "t".into(),
+        notes: events,
+        instrument: None,
+    };
+    let duration = notes.iter().map(|(_, s, d)| s + d).max().unwrap_or(0);
+    scoreleap_music_ir::MusicDocument {
+        format: MidiFormat::SingleTrack,
+        tracks: vec![track],
+        tempo_events: vec![TempoEvent {
+            time_us: 0,
+            tempo_us_per_quarter: 500_000, // 120 BPM
+        }],
+        time_signature_events: vec![],
+        duration_us: duration,
+    }
+}
+
+#[test]
+fn representative_notes_map_to_game_keys() {
+    // 代表性音符编译后必须产生游戏实际键位的扫描码（黑键钢琴）
+    let d = single_track_doc(&[
+        (48, 0, 500_000),
+        (60, 600_000, 500_000),
+        (72, 1_200_000, 500_000),
+        (83, 1_800_000, 500_000),
+    ]);
+    let p = profile();
+    let (seq, stats) = arrange(&d, &ArrangementOptions::default(), &p, &[0]).unwrap();
+    assert_eq!(stats.output_notes, 4);
+    assert_eq!(seq.actions.len(), 8);
+    // 期望键：48→,(0x33) 60→Z(0x2C) 72→Q(0x10) 83→U(0x16)
+    let expected = [0x33u16, 0x2C, 0x10, 0x16];
+    let mut i = 0;
+    for a in &seq.actions {
+        if let PlatformAction::KeyDown { key, .. } = a {
+            assert_eq!(
+                key,
+                &scoreleap_music_ir::KeyCode::Scan(expected[i]),
+                "第 {i} 个音符（MIDI 48/60/72/83）映射错误"
+            );
+            i += 1;
+        }
+    }
+    assert_eq!(i, 4);
+}
+
 #[test]
 fn single_track_compiles_to_16_actions() {
     let d = doc("single-track.mid");
