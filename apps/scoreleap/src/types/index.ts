@@ -23,6 +23,61 @@ export interface DocumentSummary {
   note_count: number
   duration_ms: number
   bpm_range: [number, number]
+  /** 来源类型：midi（直接导入）/ audio_transcription（音频转录） */
+  source_type: string
+}
+
+/** 转录任务视图（命令 get_audio_transcription_status；camelCase 由 Tauri 转换） */
+export type TranscriptionStatus =
+  | 'Queued'
+  | 'Starting'
+  | 'ValidatingInput'
+  | 'LoadingModel'
+  | 'Transcribing'
+  | 'WritingMidi'
+  | 'ImportingMidi'
+  | 'Completed'
+  | 'Failed'
+  | 'Cancelled'
+
+export interface TranscriptionJobView {
+  job_id: string
+  request_id: string
+  source_name: string
+  status: TranscriptionStatus
+  stage: string
+  message: string
+  started_at_ms: number
+  elapsed_ms: number
+  note_count: number | null
+  midi_path: string | null
+  metadata_path: string | null
+  result_doc_id: string | null
+  error_code: string | null
+  error_message: string | null
+}
+
+/** transcription://completed 事件载荷 */
+export interface TranscriptionCompletedPayload {
+  job_id: string
+  doc_id: string
+  midi_path: string
+  note_count: number
+  elapsed_ms: number
+}
+
+/** transcription://stage 事件载荷 */
+export interface TranscriptionStagePayload {
+  job_id: string
+  stage: string
+  message: string
+}
+
+/** transcription://error 事件载荷 */
+export interface TranscriptionErrorPayload {
+  job_id: string
+  code: string
+  message: string
 }
 
 /** 卷帘预览音符（get_sequence_notes 返回值；编排后、按键编译前） */

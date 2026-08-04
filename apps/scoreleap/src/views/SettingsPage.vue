@@ -259,5 +259,23 @@ async function confirmReAgree(): Promise<void> {
         </div>
       </div>
     </div>
+  <!-- 音频转录（实验）说明 -->
+  <div class="mt-8 rounded-xl border border-slate-800 bg-slate-800/30 p-5">
+    <h2 class="text-sm font-semibold text-slate-300">🎧 音频转录（实验功能）</h2>
+    <ul class="mt-3 space-y-2 text-sm text-slate-400">
+      <li>• 在「曲谱库」点击「从音频转录」选择 MP3，自动识别音符并生成可演奏曲谱。</li>
+      <li>• 转录在本地完成（Basic Pitch 模型），音频与结果不上传、不联网。</li>
+      <li>• 首次转录需加载本地模型（约 30 秒），模型随软件分发，无需额外下载。</li>
+      <li>• 完整歌曲（人声/鼓/伴奏）可能出现杂音符，建议使用钢琴独奏或旋律清晰的音频。</li>
+      <li>• 支持 MP3（≤200MB，≤10 分钟）；同一时间仅允许一个转录任务。</li>
+      <li>
+        • 转录组件路径通过环境变量
+        <code class="rounded bg-slate-700/60 px-1 text-xs text-slate-300"
+          >SCORELEAP_WORKER_PATH</code
+        >
+        指定（安装版内置，无需设置）。
+      </li>
+    </ul>
+  </div>
   </div>
 </template>
