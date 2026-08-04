@@ -74,7 +74,7 @@ fn setup(worker_ps1: &str) -> Harness {
     }
 }
 
-fn make_input(dir: &PathBuf, name: &str) -> String {
+fn make_input(dir: &std::path::Path, name: &str) -> String {
     let p = dir.join(name);
     std::fs::write(&p, b"fake mp3 bytes").unwrap();
     p.to_string_lossy().to_string()
