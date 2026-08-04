@@ -7,8 +7,10 @@ import type {
   ArrangementOptions,
   CompileSummary,
   DocumentSummary,
+  ForegroundInfo,
   GameProfile,
   ImportSummary,
+  KeymapEntry,
   NoteView,
   PlaybackBackend,
   PlaybackStatus,
@@ -95,6 +97,16 @@ export function getCrashFlag(): Promise<boolean> {
 /** 测试按键注入（命令 test_key；scan 为 Windows 扫描码，用于排查 SendInput 被 UIPI 阻止） */
 export function testKey(scan: number): Promise<string> {
   return invoke<string>('test_key', { scan })
+}
+
+/** 前台窗口提权检测（命令 check_foreground） */
+export function checkForeground(): Promise<ForegroundInfo> {
+  return invoke<ForegroundInfo>('check_foreground')
+}
+
+/** 当前 Profile 键位列表（命令 list_keymap） */
+export function listKeymap(): Promise<KeymapEntry[]> {
+  return invoke<KeymapEntry[]>('list_keymap')
 }
 
 /**

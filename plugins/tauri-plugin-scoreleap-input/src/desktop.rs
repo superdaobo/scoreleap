@@ -88,6 +88,88 @@ fn inject_scan(scan: u16, extended: bool, key_up: bool) -> Result<(), BackendErr
     Ok(())
 }
 
+/// 前台窗口信息（测试页诊断：UIPI 提权检测）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ForegroundInfo {
+    pub title: String,
+    pub pid: u32,
+    pub elevated: bool,
+    pub our_elevated: bool,
+}
+
+/// 检测前台窗口及其提权状态（排查 SendInput 被 UIPI 阻止）。
+pub fn check_foreground_info() -> Result<ForegroundInfo, BackendError> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
+    use windows::Win32::System::Threading::{
+        GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextW, GetWindowThreadProcessId};
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        let mut title_buf = [0u16; 256];
+        let len = GetWindowTextW(hwnd, &mut title_buf);
+        let title = String::from_utf16_lossy(&title_buf[..len as usize]);
+
+        let mut pid: u32 = 0;
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+
+        let mut elevated = false;
+        if pid != 0 {
+            if let Ok(proc) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+                let mut token = Default::default();
+                if OpenProcessToken(proc, TOKEN_QUERY, &mut token).is_ok() {
+                    let mut elevation: TOKEN_ELEVATION = Default::default();
+                    let mut ret: u32 = 0;
+                    if GetTokenInformation(
+                        token,
+                        TokenElevation,
+                        Some(&mut elevation as *mut _ as *mut _),
+                        std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+                        &mut ret,
+                    )
+                    .is_ok()
+                    {
+                        elevated = elevation.TokenIsElevated != 0;
+                    }
+                    let _ = CloseHandle(token);
+                }
+                let _ = CloseHandle(proc);
+            }
+        }
+
+        // 本进程提权状态
+        let mut our_elevated = false;
+        let mut token = Default::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_ok() {
+            let mut elevation: TOKEN_ELEVATION = Default::default();
+            let mut ret: u32 = 0;
+            if GetTokenInformation(
+                token,
+                TokenElevation,
+                Some(&mut elevation as *mut _ as *mut _),
+                std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+                &mut ret,
+            )
+            .is_ok()
+            {
+                our_elevated = elevation.TokenIsElevated != 0;
+            }
+            let _ = CloseHandle(token);
+        }
+
+        Ok(ForegroundInfo {
+            title,
+            pid,
+            elevated,
+            our_elevated,
+        })
+    }
+}
+
 impl InputBackend for SendInputBackend {
     fn key_down(&mut self, key: KeyCode) -> Result<(), BackendError> {
         inject(key, false)?;
