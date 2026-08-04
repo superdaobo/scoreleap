@@ -461,6 +461,21 @@ pub fn current_profile(state: &AppState) -> Result<Option<GameProfile>, CoreErro
     Ok(state.profile.lock().unwrap().clone())
 }
 
+/// 测试按键注入：向当前前台窗口发送一次按下+抬起（用于排查 SendInput 被 UIPI 阻止）。
+/// scan：Windows 扫描码（十进制）。返回注入结果信息。
+pub fn test_key(scan: u16) -> Result<String, CoreError> {
+    #[cfg(windows)]
+    {
+        tauri_plugin_scoreleap_input::test_inject_key(scan)
+            .map_err(|e| CoreError::Invalid(e.to_string()))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = scan;
+        Err(CoreError::Invalid("仅 Windows 支持按键测试".into()))
+    }
+}
+
 /// 会话结束时停止调度器（释放按键）。
 pub fn shutdown_scheduler(state: &AppState) {
     stop_existing(state);

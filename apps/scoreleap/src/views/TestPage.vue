@@ -1,13 +1,24 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { testKey } from '../services/api'
 
-const foregroundWindow = ref('未知（当前版本未启用前台窗口检测）')
+const testing = ref(false)
 const lastHint = ref<string | null>(null)
+const lastError = ref<string | null>(null)
 
-function sendTestKey(): void {
-  // mock 后端仅记录按键、不注入真实输入；真实注入请直接在游戏内使用
-  lastHint.value =
-    '测试模式使用 mock 后端记录按键，不注入真实输入；真实注入请直接在游戏内使用。'
+/** 发送 A 键（扫描码 0x1E）测试注入 */
+async function sendTestKey(): Promise<void> {
+  if (testing.value) return
+  testing.value = true
+  lastHint.value = null
+  lastError.value = null
+  try {
+    lastHint.value = await testKey(0x1e)
+  } catch (e) {
+    lastError.value = String(e)
+  } finally {
+    testing.value = false
+  }
 }
 </script>
 
@@ -22,34 +33,50 @@ function sendTestKey(): void {
       <section
         class="rounded-xl border border-slate-800 bg-slate-800/40 p-5"
       >
-        <h2 class="text-sm font-medium text-slate-300">当前前台窗口</h2>
-        <p
-          class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3 font-mono text-sm text-slate-400"
-        >
-          {{ foregroundWindow }}
-        </p>
+        <h2 class="text-sm font-medium text-slate-300">发送测试按键</h2>
         <p class="mt-2 text-xs text-slate-500">
-          提示：SendInput 注入的目标是当前前台窗口，请确保目标窗口已聚焦。
+          点击后向前台窗口注入一次「A」键（按下+抬起）。目标窗口需已聚焦。
+        </p>
+        <button
+          type="button"
+          class="mt-3 rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+          :disabled="testing"
+          @click="sendTestKey"
+        >
+          {{ testing ? '发送中…' : '发送测试按键 A' }}
+        </button>
+        <p
+          v-if="lastHint"
+          class="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+        >
+          ✅ {{ lastHint }}
+        </p>
+        <p
+          v-if="lastError"
+          class="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300"
+        >
+          ❌ {{ lastError }}
         </p>
       </section>
 
       <section
         class="rounded-xl border border-slate-800 bg-slate-800/40 p-5"
       >
-        <h2 class="text-sm font-medium text-slate-300">发送测试按键</h2>
-        <button
-          type="button"
-          class="mt-3 rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-400"
-          @click="sendTestKey"
-        >
-          发送测试按键 A
-        </button>
-        <p
-          v-if="lastHint"
-          class="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
-        >
-          {{ lastHint }}
-        </p>
+        <h2 class="text-sm font-medium text-slate-300">游戏无反应？排查</h2>
+        <ul class="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-400">
+          <li>
+            先打开<b class="text-slate-200">记事本</b>聚焦后点「发送测试按键 A」：记事本出现字母 a
+            说明注入正常，问题在键位映射（需在 Profile 文件中校准）；无反应则说明注入被系统阻止。
+          </li>
+          <li>
+            注入被阻止最常见原因：<b class="text-slate-200">游戏以管理员身份运行</b>（UIPI 隔离）。
+            解决：以管理员身份运行本程序（右键 → 以管理员身份运行）。
+          </li>
+          <li>
+            确认前台窗口确实是游戏（开始演奏后不要切回本程序窗口；可在倒计时 3
+            秒内切到游戏）。
+          </li>
+        </ul>
       </section>
     </div>
 
@@ -70,12 +97,14 @@ function sendTestKey(): void {
           >
           可随时中断并释放全部按键。
         </li>
+        <li>
+          停止/暂停响应不超过 100ms；若界面仍卡死，请在
+          <code class="rounded bg-slate-700 px-1 font-mono text-xs"
+            >%APPDATA%\com.superdaobo.scoreleap\logs</code
+          >
+          查看日志。
+        </li>
       </ol>
-      <div
-        class="mt-4 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-xs text-indigo-300"
-      >
-        测试模式使用 mock 后端记录按键，不注入真实输入；真实注入请直接在游戏内使用。
-      </div>
     </section>
   </div>
 </template>

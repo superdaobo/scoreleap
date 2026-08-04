@@ -11,7 +11,6 @@ use scoreleap_sequence::{CompiledSequence, PlaybackCommand, PlaybackProgress, Pl
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
 
 /// 后端错误。
 #[derive(Debug, thiserror::Error)]
@@ -247,7 +246,6 @@ pub enum SchedulerEvent {
 pub struct SchedulerHandle {
     cmd_tx: Sender<PlaybackCommand>,
     event_rx: Arc<Mutex<Receiver<SchedulerEvent>>>,
-    join: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl SchedulerHandle {
@@ -264,21 +262,21 @@ impl SchedulerHandle {
             .recv()
             .map_err(|e| e.to_string())
     }
-    /// 克隆句柄（共享命令发送端与事件接收端；join 仅原句柄可用）。
+    /// 克隆句柄（共享命令发送端与事件接收端）。
     pub fn try_clone(&self) -> Result<SchedulerHandle, String> {
         Ok(SchedulerHandle {
             cmd_tx: self.cmd_tx.clone(),
             event_rx: self.event_rx.clone(),
-            join: self.join.clone(),
         })
     }
-    /// 停止调度线程（发送 EmergencyStop 并等待退出）。
+    /// 停止调度线程（发送 EmergencyStop 后立即返回，**不阻塞**）。
+    ///
+    /// 不得在此 join 调度线程：调度线程在音符间隙的长睡眠中可能延迟处理
+    /// 命令，join 会阻塞调用方（Tauri 同步命令在主线程执行 → UI 卡死）。
+    /// 调度线程收到 EmergencyStop（或命令通道关闭）后自行退出。
     pub fn shutdown(self) {
         let _ = self.cmd_tx.send(PlaybackCommand::EmergencyStop);
         drop(self.cmd_tx);
-        if let Some(j) = self.join.lock().unwrap().take() {
-            let _ = j.join();
-        }
     }
 }
 
@@ -327,14 +325,13 @@ impl Scheduler {
             cmd_rx,
             event_tx,
         };
-        let join = std::thread::Builder::new()
+        std::thread::Builder::new()
             .name("scoreleap-scheduler".into())
             .spawn(move || sched.run())
             .expect("failed to spawn scheduler thread");
         SchedulerHandle {
             cmd_tx,
             event_rx: Arc::new(Mutex::new(event_rx)),
-            join: Arc::new(Mutex::new(Some(join))),
         }
     }
 
@@ -447,7 +444,12 @@ impl Scheduler {
         let deadline = start + COUNTDOWN_US;
         let mut cancel = false;
         loop {
-            self.clock.sleep_until(deadline);
+            let now = self.clock.now_us();
+            if now >= deadline {
+                break;
+            }
+            // 分段睡眠（≤50ms/段）：倒计时期间可及时响应取消/紧急停止
+            self.clock.sleep_until(deadline.min(now + 50_000));
             // 检查命令（倒计时期间允许取消/紧急停止/停止）
             while let Ok(cmd) = self.cmd_rx.try_recv() {
                 match cmd {
@@ -466,9 +468,6 @@ impl Scheduler {
                 self.emergency_stop();
                 self.emit(SchedulerEvent::State(PlaybackState::Stopped));
                 return;
-            }
-            if self.clock.now_us() >= deadline {
-                break;
             }
         }
         // 开始播放
@@ -566,8 +565,10 @@ impl Scheduler {
                         }
                         false
                     } else {
-                        // deadline 驱动等待
-                        self.clock.sleep_until(wall);
+                        // 分段睡眠（≤50ms/段）：音符间隙中命令（停止/暂停）可及时处理；
+                        // 最后一段精确睡到动作时刻，保持按键精度。
+                        let step = wall.min(now + 50_000);
+                        self.clock.sleep_until(step);
                         false
                     }
                 }
@@ -695,6 +696,93 @@ mod tests {
             }
         }
         events
+    }
+
+    #[test]
+    fn shutdown_returns_promptly_during_long_note_gap() {
+        // 回归：修复前 shutdown 在主线程 join 调度线程，而调度线程在音符间隙
+        // 的长 sleep（high_res_sleep_until）中不处理命令 → UI 线程卡死。
+        let k = KeyCode::scan(0x1E);
+        // 两个动作间隔 5 秒（模拟音符稀疏的曲子）
+        let seq = seq_with(vec![(0, k, true), (5_000_000, k, false)]);
+        let clock = Arc::new(SystemClock);
+        let backend = MockInputBackend::new();
+        let handle = Scheduler::spawn(seq, clock, Box::new(backend.clone()));
+        handle.command(PlaybackCommand::Start).unwrap();
+        // 等待进入 Playing 并完成第一个动作（进入长 sleep）
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        loop {
+            match handle.try_recv_event() {
+                Some(SchedulerEvent::State(PlaybackState::Playing)) => break,
+                _ => {
+                    if std::time::Instant::now() > deadline {
+                        panic!("未进入 Playing");
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300)); // 确保进入长 sleep
+                                                                   // 关键断言：shutdown 必须在 1 秒内返回（修复前会阻塞约 5 秒）
+        let start = std::time::Instant::now();
+        handle.shutdown();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "shutdown 阻塞了 {elapsed:?}（调度线程未及时处理 EmergencyStop）"
+        );
+        // 按键应在调度线程处理 EmergencyStop 后释放（异步，轮询等待 ≤1s）
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            if backend.pressed().is_empty() {
+                break;
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("EmergencyStop 后按键未释放");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn stop_responds_during_long_note_gap() {
+        // 回归：音符间隙中 Stop 命令应在 1 秒内生效（修复前命令在长 sleep 后才会被处理）
+        let k = KeyCode::scan(0x1E);
+        let seq = seq_with(vec![(0, k, true), (5_000_000, k, false)]);
+        let clock = Arc::new(SystemClock);
+        let backend = MockInputBackend::new();
+        let handle = Scheduler::spawn(seq, clock, Box::new(backend.clone()));
+        handle.command(PlaybackCommand::Start).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        loop {
+            match handle.try_recv_event() {
+                Some(SchedulerEvent::State(PlaybackState::Playing)) => break,
+                _ => {
+                    if std::time::Instant::now() > deadline {
+                        panic!("未进入 Playing");
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let start = std::time::Instant::now();
+        handle.command(PlaybackCommand::Stop).unwrap();
+        // 等待 Stopped 事件，须在 1 秒内
+        let deadline = start + std::time::Duration::from_secs(1);
+        loop {
+            match handle.try_recv_event() {
+                Some(SchedulerEvent::State(PlaybackState::Stopped)) => break,
+                _ => {
+                    if std::time::Instant::now() > deadline {
+                        panic!("Stop 未在 1 秒内生效");
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        }
+        assert!(backend.pressed().is_empty());
+        handle.shutdown();
     }
 
     #[test]

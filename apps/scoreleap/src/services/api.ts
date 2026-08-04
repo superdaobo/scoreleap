@@ -92,6 +92,11 @@ export function getCrashFlag(): Promise<boolean> {
   return invoke<boolean>('get_crash_flag')
 }
 
+/** 测试按键注入（命令 test_key；scan 为 Windows 扫描码，用于排查 SendInput 被 UIPI 阻止） */
+export function testKey(scan: number): Promise<string> {
+  return invoke<string>('test_key', { scan })
+}
+
 /**
  * 选择 MIDI 文件（@tauri-apps/plugin-dialog）。
  * 用户取消时返回 null。
