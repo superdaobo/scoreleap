@@ -9,6 +9,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "Packaging.Common.ps1")
 
 $runtimeVersion = "1.24.4"
 $runtimeArchiveName = "onnxruntime-win-x64-$runtimeVersion.zip"
@@ -64,6 +65,7 @@ if ([string]::IsNullOrWhiteSpace($ResourceDirectory)) {
     $ResourceDirectory = Join-Path $RepositoryRoot "apps/scoreleap/src-tauri/resources/scoreleap-transcriber"
 }
 $ResourceDirectory = Get-FullPath $ResourceDirectory
+Assert-SafeDirectoryTarget -Path $ResourceDirectory -Label "原生资源目录"
 
 if ([string]::IsNullOrWhiteSpace($SidecarPath)) {
     $SidecarPath = Join-Path $RepositoryRoot "target/release/scoreleap-transcriber-native.exe"
@@ -117,6 +119,8 @@ if (-not $cacheIsValid) {
         Write-Host "下载微软官方 ONNX Runtime $runtimeVersion x64 CPU 资产"
         for ($attempt = 1; $attempt -le 3; $attempt++) {
             try {
+                # Windows PowerShell 5.1 在旧系统上可能仍默认 TLS 1.0；GitHub 仅接受现代 TLS。
+                [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
                 Invoke-WebRequest -Uri $runtimeUrl -OutFile $downloadPath -UseBasicParsing
                 break
             }
@@ -133,7 +137,13 @@ if (-not $cacheIsValid) {
             throw "下载大小不符，期望 $runtimeArchiveSize，实际 $downloadSize"
         }
         Assert-FileHash -Path $downloadPath -ExpectedSha256 $runtimeArchiveSha256
-        Move-Item -LiteralPath $downloadPath -Destination $cachedArchive -Force
+        if (Test-Path -LiteralPath $cachedArchive -PathType Leaf) {
+            # 下载文件与缓存位于同一目录；Replace 在 NTFS 上原子替换且失败时保留旧缓存。
+            [IO.File]::Replace($downloadPath, $cachedArchive, $null)
+        }
+        else {
+            [IO.File]::Move($downloadPath, $cachedArchive)
+        }
     }
     finally {
         if (Test-Path -LiteralPath $downloadPath) {
@@ -160,6 +170,10 @@ $stagingInstalled = $false
 try {
     New-Item -ItemType Directory -Path $extractDirectory | Out-Null
     New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
+    Assert-SafeZipArchive `
+        -ArchivePath $cachedArchive `
+        -ExtractionRoot $extractDirectory `
+        -ExpectedRoot "onnxruntime-win-x64-$runtimeVersion"
     Expand-Archive -LiteralPath $cachedArchive -DestinationPath $extractDirectory
 
     $archiveRoot = Join-Path $extractDirectory "onnxruntime-win-x64-$runtimeVersion"
@@ -205,6 +219,9 @@ try {
     $manifestPath = Join-Path $stagingDirectory "runtime-manifest.json"
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
+    # 先完整审计 staging，再触碰现有资源目录，确保部署失败闭合。
+    & (Join-Path $PSScriptRoot "Test-NativeTranscriberBundle.ps1") -ResourceDirectory $stagingDirectory
+
     if (Test-Path -LiteralPath $ResourceDirectory) {
         Move-Item -LiteralPath $ResourceDirectory -Destination $backupDirectory
         $destinationMoved = $true
@@ -213,8 +230,16 @@ try {
     $stagingInstalled = $true
 
     if ($destinationMoved -and (Test-Path -LiteralPath $backupDirectory)) {
-        Remove-Item -LiteralPath $backupDirectory -Recurse -Force
-        $destinationMoved = $false
+        try {
+            Remove-Item -LiteralPath $backupDirectory -Recurse -Force
+        }
+        catch {
+            # 新资源已经完整安装；旧备份清理失败不应触发对部分删除备份的回滚。
+            Write-Warning "新资源已安装，但旧备份未能完全清理: $backupDirectory；$($_.Exception.Message)"
+        }
+        finally {
+            $destinationMoved = $false
+        }
     }
     Write-Host "原生转录资源已准备: $ResourceDirectory"
 }
@@ -230,9 +255,13 @@ catch {
     throw
 }
 finally {
-    foreach ($temporaryDirectory in @($extractDirectory, $stagingDirectory, $backupDirectory)) {
+    # 若原目录恢复失败，backup 是唯一可恢复副本，必须保留并让构建失败闭合。
+    foreach ($temporaryDirectory in @($extractDirectory, $stagingDirectory)) {
         if (Test-Path -LiteralPath $temporaryDirectory) {
             Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force
         }
+    }
+    if ($destinationMoved -and (Test-Path -LiteralPath $backupDirectory)) {
+        Write-Warning "原资源目录恢复失败，已保留备份以便人工恢复: $backupDirectory"
     }
 }

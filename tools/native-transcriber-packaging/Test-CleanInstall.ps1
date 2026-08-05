@@ -69,11 +69,18 @@ if ($RequireRealAssets) {
 }
 & (Join-Path $PSScriptRoot "Invoke-NativeTranscriberE2E.ps1") @e2eArguments
 
-$forbidden = @(Get-ChildItem -LiteralPath $InstallDirectory -Recurse -File | Where-Object {
-    $_.FullName -match '(?i)(python[^\\/]*\.dll|librosa|numba|tensorflow|site-packages|\.venv|\.(onnx|tflite|pb)$)'
-})
+$forbidden = @(
+    Get-ChildItem -LiteralPath $InstallDirectory -Recurse -File |
+        ForEach-Object {
+            # 只审计安装目录内的相对路径，避免父目录恰含 tensorflow/librosa 等词时误报。
+            $relativePath = $_.FullName.Substring($InstallDirectory.Length).TrimStart('\', '/').Replace('\', '/')
+            if ($relativePath -match '(?i)(python[^/]*\.dll|librosa|numba|tensorflow|site-packages|\.venv|\.(onnx|tflite|pb)$)') {
+                $relativePath
+            }
+        }
+)
 if ($forbidden.Count -gt 0) {
-    throw "安装包包含禁止内容: $($forbidden.FullName -join ', ')"
+    throw "安装包包含禁止内容: $($forbidden -join ', ')"
 }
 
 Write-Host "Windows clean-install 通过: $InstallDirectory"

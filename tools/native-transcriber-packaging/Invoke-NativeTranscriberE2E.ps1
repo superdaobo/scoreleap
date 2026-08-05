@@ -185,8 +185,11 @@ if ($errorMessages.Count -ne 1 -or $errorMessages[0].code -notin @("MODEL_LOAD_F
     $codes = @($errorMessages | ForEach-Object { $_.code }) -join ', '
     throw "缺模型场景未返回模型加载错误，实际错误码: $codes"
 }
-if (Test-Path -LiteralPath $missingMidiPath -PathType Leaf) {
-    throw "缺模型失败后不应留下 MIDI 成品"
+if (
+    (Test-Path -LiteralPath $missingMidiPath -PathType Leaf) -or
+    (Test-Path -LiteralPath $missingMetadataPath -PathType Leaf)
+) {
+    throw "缺模型失败后不应留下 MIDI 或 metadata 成品"
 }
 Write-Host "JSONL/缺模型冒烟通过，耗时 $($missingResult.ElapsedMs)ms"
 
@@ -239,10 +242,11 @@ if ($midiHeader -ne "MThd") {
     throw "生成文件不是标准 MIDI: $midiPath"
 }
 $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
-$durationMs = [double]$metadata.source.duration_ms
-if ($durationMs -le 0) {
-    throw "metadata 缺少有效 source.duration_ms，无法计算 RTF"
+$durationSeconds = [double]$metadata.duration_seconds
+if ([double]::IsNaN($durationSeconds) -or [double]::IsInfinity($durationSeconds) -or $durationSeconds -le 0) {
+    throw "metadata 缺少有效 duration_seconds，无法计算 RTF"
 }
+$durationMs = $durationSeconds * 1000.0
 if ([int]$resultMessages[0].note_count -le 0) {
     throw "真实钢琴音频没有识别出任何音符"
 }

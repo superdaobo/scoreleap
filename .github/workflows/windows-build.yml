@@ -66,10 +66,13 @@ jobs:
           key: onnxruntime-win-x64-1.24.4-d2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357
 
       - name: PowerShell syntax check (60 second limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-powershell-syntax.ps1 scripts/invoke-with-timeout.ps1 scripts/check-powershell-syntax.ps1 tools/native-transcriber-packaging/Prepare-NativeTranscriber.ps1 tools/native-transcriber-packaging/Test-NativeTranscriberBundle.ps1 tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 tools/native-transcriber-packaging/Test-CleanInstall.ps1 tools/native-transcriber-packaging/Publish-WindowsArtifactMetadata.ps1 tools/native-transcriber-packaging/Test-PackagingSources.ps1
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-powershell-syntax.ps1 scripts/invoke-with-timeout.ps1 scripts/check-powershell-syntax.ps1 tools/native-transcriber-packaging/Packaging.Common.ps1 tools/native-transcriber-packaging/Prepare-NativeTranscriber.ps1 tools/native-transcriber-packaging/Test-NativeTranscriberBundle.ps1 tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 tools/native-transcriber-packaging/Test-CleanInstall.ps1 tools/native-transcriber-packaging/Publish-WindowsArtifactMetadata.ps1 tools/native-transcriber-packaging/Test-PackagingSources.ps1 tools/native-transcriber-packaging/Test-PackagingSecurity.ps1
 
       - name: Packaging source contract check (60 second limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Test-PackagingSources.ps1
+
+      - name: Packaging path-safety negative tests (60 second limit)
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Test-PackagingSecurity.ps1
 
       - name: Install frontend dependencies (5 minute limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 300 -Executable pnpm.cmd install --frozen-lockfile
