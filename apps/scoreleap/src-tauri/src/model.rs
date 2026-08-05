@@ -371,9 +371,13 @@ pub fn resolve_packaged_file(
     let resource = app.path().resource_dir().ok()?;
     let root = resource.canonicalize().unwrap_or_else(|_| resource.clone());
     for base in [&resource, &resource.join("resources")] {
-        let candidate = base.join(relative).canonicalize().ok()?;
-        if candidate.starts_with(&root) && candidate.is_file() {
-            return Some(candidate);
+        // 注意：不能对 canonicalize 用 `?`（第一个 base 不存在时会提前返回，
+        // 永远到不了 resources/ 子目录）。逐个尝试，跳过不存在的 base。
+        let candidate = base.join(relative);
+        if let Ok(canonical) = candidate.canonicalize() {
+            if canonical.starts_with(&root) && canonical.is_file() {
+                return Some(canonical);
+            }
         }
     }
     None
