@@ -14,6 +14,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
 const RESAMPLE_CHUNK_SIZE: usize = 1_024;
+const MAX_OUTPUT_FRAMES: usize = 22_050 * 600;
 
 struct ValidatedFile {
     path: PathBuf,
@@ -60,6 +61,7 @@ pub fn decode_file(
             message: error.to_string(),
         })?;
     let mut mono = Vec::new();
+    let max_source_frames = max_source_frames(media.sample_rate, config.max_duration_seconds)?;
 
     loop {
         let packet = match media.format.next_packet() {
@@ -78,8 +80,12 @@ pub fn decode_file(
         }
         let decoded = match decoder.decode(&packet) {
             Ok(decoded) => decoded,
-            // 单个损坏包可恢复；继续读取后续包，不把局部噪点升级为整曲失败。
-            Err(SymphoniaError::DecodeError(_)) => continue,
+            // 质量优先：跳过坏包会静默压缩时间轴，造成后续音符整体提前。
+            Err(SymphoniaError::DecodeError(message)) => {
+                return Err(AudioError::Decode {
+                    message: message.to_owned(),
+                })
+            }
             Err(SymphoniaError::IoError(error)) if error.kind() == ErrorKind::UnexpectedEof => {
                 break
             }
@@ -96,8 +102,18 @@ pub fn decode_file(
 
         let mut interleaved = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
         interleaved.copy_interleaved_ref(decoded);
+        let incoming_frames = interleaved.samples().len() / media.channels;
+        let next_source_frames = mono
+            .len()
+            .checked_add(incoming_frames)
+            .ok_or(AudioError::FrameCountOverflow)?;
+        if next_source_frames > max_source_frames {
+            return Err(AudioError::DurationExceeded {
+                actual_seconds: next_source_frames as f64 / f64::from(media.sample_rate),
+                max_seconds: config.max_duration_seconds,
+            });
+        }
         append_downmixed(&mut mono, interleaved.samples(), media.channels)?;
-        validate_duration(mono.len() as f64 / f64::from(media.sample_rate), config)?;
     }
     if mono.is_empty() {
         return Err(AudioError::EmptyAudio);
@@ -122,10 +138,10 @@ pub fn decode_file(
 }
 
 fn validate_config(config: &AudioConfig) -> Result<(), AudioError> {
-    if config.target_sample_rate == 0 {
+    if config.target_sample_rate != crate::types::DEFAULT_TARGET_SAMPLE_RATE {
         return Err(AudioError::InvalidConfig {
             field: "target_sample_rate",
-            reason: "必须大于 0",
+            reason: "当前模型仅接受 22050Hz",
         });
     }
     if config.max_file_size_bytes == 0 {
@@ -140,7 +156,21 @@ fn validate_config(config: &AudioConfig) -> Result<(), AudioError> {
             reason: "必须是大于 0 的有限数值",
         });
     }
+    if config.max_duration_seconds > crate::types::DEFAULT_MAX_DURATION_SECONDS {
+        return Err(AudioError::InvalidConfig {
+            field: "max_duration_seconds",
+            reason: "不得超过 600 秒安全上限",
+        });
+    }
     Ok(())
+}
+
+fn max_source_frames(sample_rate: u32, duration_seconds: f64) -> Result<usize, AudioError> {
+    let frames = (f64::from(sample_rate) * duration_seconds).ceil();
+    if !frames.is_finite() || frames > usize::MAX as f64 {
+        return Err(AudioError::FrameCountOverflow);
+    }
+    Ok(frames as usize)
 }
 
 fn validate_file(path: &Path, config: &AudioConfig) -> Result<ValidatedFile, AudioError> {
@@ -209,6 +239,7 @@ fn open_media(file: &ValidatedFile) -> Result<OpenedMedia, AudioError> {
     let track_id = track.id;
     let sample_rate = codec_params
         .sample_rate
+        .filter(|rate| *rate > 0)
         .ok_or(AudioError::MissingSampleRate)?;
     let channels = codec_params
         .channels
@@ -298,9 +329,12 @@ fn append_downmixed(
         let mut sum = 0.0f64;
         for (channel, sample) in frame.iter().enumerate() {
             if !sample.is_finite() {
-                return Err(AudioError::NonFiniteSample {
-                    sample_index: output.len() * channels + channel,
-                });
+                let sample_index = output
+                    .len()
+                    .checked_mul(channels)
+                    .and_then(|offset| offset.checked_add(channel))
+                    .ok_or(AudioError::FrameCountOverflow)?;
+                return Err(AudioError::NonFiniteSample { sample_index });
             }
             sum += f64::from(*sample);
         }
@@ -327,8 +361,15 @@ fn resample_mono(
         .map_err(|error| AudioError::ResamplerCreation {
             message: error.to_string(),
         })?;
-    let expected = (input.len() as f64 * ratio).round() as usize;
-    let mut output = Vec::with_capacity(expected + RESAMPLE_CHUNK_SIZE);
+    let expected = expected_output_frames(input.len(), source_rate, target_rate)?;
+    let delay = resampler.output_delay();
+    let required = expected
+        .checked_add(delay)
+        .ok_or(AudioError::FrameCountOverflow)?;
+    let capacity = required
+        .checked_add(RESAMPLE_CHUNK_SIZE)
+        .ok_or(AudioError::FrameCountOverflow)?;
+    let mut output = Vec::with_capacity(capacity);
     let mut offset = 0usize;
     while input.len() - offset >= resampler.input_frames_next() {
         let length = resampler.input_frames_next();
@@ -348,8 +389,8 @@ fn resample_mono(
             })?;
         output.extend_from_slice(&chunk[0]);
     }
-    // Sinc 滤波器存在延迟；以静音刷新尾部，再裁切到精确时长。
-    while output.len() < expected {
+    // Sinc 输出以 `output_delay` 个延迟帧开头；先完整刷新，再去头保尾。
+    while output.len() < required {
         let no_input: Option<&[&[f32]]> = None;
         let chunk =
             resampler
@@ -364,11 +405,31 @@ fn resample_mono(
         }
         output.extend_from_slice(&chunk[0]);
     }
+    output.copy_within(delay..required, 0);
     output.truncate(expected);
     if let Some(sample_index) = output.iter().position(|sample| !sample.is_finite()) {
         return Err(AudioError::NonFiniteSample { sample_index });
     }
     Ok(output)
+}
+
+fn expected_output_frames(
+    input_frames: usize,
+    source_rate: u32,
+    target_rate: u32,
+) -> Result<usize, AudioError> {
+    let numerator = (input_frames as u128)
+        .checked_mul(u128::from(target_rate))
+        .and_then(|value| value.checked_add(u128::from(source_rate / 2)))
+        .ok_or(AudioError::FrameCountOverflow)?;
+    let expected_u128 = numerator / u128::from(source_rate);
+    if expected_u128 > MAX_OUTPUT_FRAMES as u128 {
+        return Err(AudioError::OutputFrameLimitExceeded {
+            actual_frames: expected_u128,
+            max_frames: MAX_OUTPUT_FRAMES,
+        });
+    }
+    usize::try_from(expected_u128).map_err(|_| AudioError::FrameCountOverflow)
 }
 
 #[cfg(test)]
@@ -467,12 +528,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("stereo.wav");
         let samples: Vec<f32> = (0..128).flat_map(|_| [0.5, -0.25]).collect();
-        write_wav(&path, 8_000, 2, &samples);
-        let config = AudioConfig {
-            target_sample_rate: 8_000,
-            ..AudioConfig::default()
-        };
-        let decoded = decode_file(&path, &config).unwrap();
+        write_wav(&path, 22_050, 2, &samples);
+        let decoded = decode_file(&path, &AudioConfig::default()).unwrap();
         assert_eq!(decoded.samples.len(), 128);
         assert!(decoded
             .samples
@@ -496,5 +553,61 @@ mod tests {
         );
         assert!(decoded.samples.iter().all(|sample| sample.is_finite()));
         assert!(decoded.samples.iter().any(|sample| sample.abs() > 0.1));
+    }
+
+    #[test]
+    fn rejects_unsupported_target_rate_and_unsafe_duration_limit() {
+        let invalid_rate = AudioConfig {
+            target_sample_rate: 44_100,
+            ..AudioConfig::default()
+        };
+        assert!(matches!(
+            validate_config(&invalid_rate),
+            Err(AudioError::InvalidConfig {
+                field: "target_sample_rate",
+                ..
+            })
+        ));
+
+        let unsafe_duration = AudioConfig {
+            max_duration_seconds: 601.0,
+            ..AudioConfig::default()
+        };
+        assert!(matches!(
+            validate_config(&unsafe_duration),
+            Err(AudioError::InvalidConfig {
+                field: "max_duration_seconds",
+                ..
+            })
+        ));
+
+        assert!(matches!(
+            expected_output_frames(48_000 * 601, 48_000, 22_050),
+            Err(AudioError::OutputFrameLimitExceeded { .. })
+        ));
+    }
+
+    #[test]
+    fn compensates_resampler_delay_at_both_ends() {
+        let mut input = vec![0.0; 48_000];
+        // 在滤波器支撑范围内放置首尾脉冲，避免测试信号本身被零填充边界截断。
+        input[256] = 1.0;
+        input[47_999 - 256] = 1.0;
+
+        let output = resample_mono(&input, 48_000, 22_050).unwrap();
+
+        assert_eq!(output.len(), 22_050);
+        let front = output[..512]
+            .iter()
+            .enumerate()
+            .max_by(|left, right| left.1.abs().total_cmp(&right.1.abs()))
+            .unwrap();
+        let tail = output[output.len() - 512..]
+            .iter()
+            .enumerate()
+            .max_by(|left, right| left.1.abs().total_cmp(&right.1.abs()))
+            .unwrap();
+        assert!(front.1.abs() > 0.2, "front peak: {front:?}");
+        assert!(tail.1.abs() > 0.2, "tail peak: {tail:?}");
     }
 }
