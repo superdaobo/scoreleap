@@ -308,6 +308,14 @@ impl TranscriptionService {
             cmd.arg("--minimum-note-length-ms").arg(value.to_string());
         }
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // 隐藏子进程控制台：GUI 父进程启动控制台子系统 worker 时，
+            // 不设置该标志会在桌面弹出黑色终端窗口。
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
