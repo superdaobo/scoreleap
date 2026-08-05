@@ -1,0 +1,56 @@
+{
+  "catalog": {
+    "schema_version": 1,
+    "models": [
+      {
+        "manifest": {
+          "schema_version": 1,
+          "model_id": "basic-pitch",
+          "version": "1.0.0",
+          "engine_compat": {
+            "engine_id": "scoreleap-onnx",
+            "min_version": "0.2.0",
+            "max_version": null
+          },
+          "artifacts": [
+            {
+              "path": "nmp.onnx",
+              "size_bytes": 230444,
+              "sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec"
+            }
+          ],
+          "package": {
+            "size_bytes": 230444,
+            "sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
+            "sources": [
+              {
+                "kind": "cdn",
+                "url": "https://cdn.scoreleap.dev/models/basic-pitch-1.0.0.zip"
+              },
+              {
+                "kind": "github_release",
+                "url": "https://github.com/superdaobo/scoreleap/releases/download/models/basic-pitch-1.0.0.zip"
+              }
+            ]
+          },
+          "license": {
+            "spdx_id": "Apache-2.0",
+            "name": "Apache License 2.0 (Basic Pitch 模型)",
+            "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+            "redistribution_allowed": true
+          }
+        },
+        "signature": {
+          "algorithm": "ed25519",
+          "key_id": "scoreleap-release-2026-08",
+          "signature_hex": "f4ff0c584e13e7ad038ece40cbaf063444b0205af3f400cb0a6e0d653e0d164e65e3301b6ccf5f4fa313bd712fdeaf0e2a2453f6df15ab57056cfca616954700"
+        }
+      }
+    ]
+  },
+  "signature": {
+    "algorithm": "ed25519",
+    "key_id": "scoreleap-release-2026-08",
+    "signature_hex": "77d1963b876f3446b6c170f66610eae665764a31b8d01b0cc69e59780767ae8cae1ddeb7b69e6a97a11b4c78ed13489dc59f5b33f8f20c6945c2ecd11f9cab01"
+  }
+}
