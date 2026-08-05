@@ -98,10 +98,20 @@ fn trusted_config_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), ModelMana
     let resource = app.path().resource_dir().map_err(|error| {
         ModelManagerError::TrustConfigurationMissing(format!("无法解析应用资源目录: {error}"))
     })?;
-    Ok((
-        resource.join("scoreleap-model/catalog.signed.json"),
-        resource.join("scoreleap-model/public-key.hex"),
-    ))
+    // 兼容两种布局：exe 目录直接放资源（开发/单文件），或 resources/ 子目录（安装包）。
+    let candidates = [
+        resource.join("scoreleap-model"),
+        resource.join("resources/scoreleap-model"),
+    ];
+    let model_dir = candidates
+        .into_iter()
+        .find(|dir| dir.join("catalog.signed.json").is_file() && dir.join("public-key.hex").is_file())
+        .ok_or_else(|| {
+            ModelManagerError::TrustConfigurationMissing(
+                "缺少 catalog.signed.json 或 public-key.hex；发布流程必须注入可信配置".into(),
+            )
+        })?;
+    Ok((model_dir.join("catalog.signed.json"), model_dir.join("public-key.hex")))
 }
 
 fn load_context(app: &AppHandle) -> Result<ModelContext, ModelManagerError> {
@@ -358,7 +368,13 @@ pub fn resolve_packaged_file(
             return path.canonicalize().ok();
         }
     }
-    let root = app.path().resource_dir().ok()?.canonicalize().ok()?;
-    let candidate = root.join(relative).canonicalize().ok()?;
-    (candidate.starts_with(&root) && candidate.is_file()).then_some(candidate)
+    let resource = app.path().resource_dir().ok()?;
+    let root = resource.canonicalize().unwrap_or_else(|_| resource.clone());
+    for base in [&resource, &resource.join("resources")] {
+        let candidate = base.join(relative).canonicalize().ok()?;
+        if candidate.starts_with(&root) && candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
