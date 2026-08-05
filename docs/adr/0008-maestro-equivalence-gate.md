@@ -36,3 +36,18 @@ Onset+Offset F1 ≥ 0.75、误音 ≤ 3/分钟）原计划同时应用于 MAESTR
 - 不再以“Basic Pitch 在 MAESTRO 上达到 0.93/0.87/0.90”作为发布条件；
   用户样本听审成为最终发布确认。
 - MAESTRO 数据集仍仅存于本机 `D:\tmp`，不随产品分发（ADR-0006 数据边界不变）。
+
+
+## 预设参数冻结（2026-08-05，校准区 8月4日.MP3 0-120s）
+
+- `piano_balanced`：onset 0.50 / frame 0.30 / min-note 127.7ms / energy 11 / dup-gap 35ms，
+  infer_onsets + melodia_trick 开启。与官方 Basic Pitch 默认一致，校准区与官方逐音符
+  等价（一致 F1 = 1.0000，912/912 音符），**冻结**。
+- `piano_detail`：onset 0.42 / frame 0.26 / min-note 75ms / energy 8 / dup-gap 25ms。
+  弱音优先：校准区 1379 音符（官方 912 的超集，一致 F1 0.744），**冻结**。
+- `piano_noise_reduced`：onset 0.58 / frame 0.38 / min-note 160ms / energy 14 / dup-gap 55ms，
+  infer_onsets + melodia_trick 关闭。少误音优先：校准区 536 音符（保守子集，一致 F1 0.733），
+  **冻结**。
+- 三个预设均限定钢琴 A0-C8（MIDI 21-108）：模型输出固定 88 音符（MIDI_OFFSET=21 +
+  NOTE_BINS=88），不产生越界音高。
+- 高级覆盖优先级不变：显式参数 > 预设 > 模型默认值（`ThresholdOverrides::resolve`）。
