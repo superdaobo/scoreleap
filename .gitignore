@@ -47,6 +47,7 @@ Thumbs.db
 
 target-v013/
 
+.build-tmp/
 
 # Python transcription worker
 tools/transcription-worker/.venv/
@@ -61,4 +62,3 @@ tools/transcription-worker/*.egg-info/
 # 打包用转录 Worker（构建时复制；仅提交占位 README）
 apps/scoreleap/src-tauri/resources/scoreleap-transcriber/*
 !apps/scoreleap/src-tauri/resources/scoreleap-transcriber/README.md
-
