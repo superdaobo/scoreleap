@@ -1,16 +1,15 @@
-# 转录 Worker 资源目录（构建时填充）
+# 原生转录资源目录（构建时原子填充）
 
-本目录由构建流程填充 PyInstaller onedir 产物（`scoreleap-transcriber.exe` + `_internal/`，约 1.2GB）。
-占位 README 使 CI 的 cargo 构建通过（tauri build script 校验 resources 存在）。
+源码树只保留此说明文件，使普通 `cargo test` 不需要下载第三方二进制。
+Windows 发布流程会用 `tools/native-transcriber-packaging/Prepare-NativeTranscriber.ps1`
+将整个目录原子替换为以下经过校验的文件：
 
-本地完整安装包构建：
-```powershell
-# 1. 构建 Worker（tools/transcription-worker，见 packaging/README.md）
-pyinstaller --noconfirm packaging/scoreleap-transcriber.spec
-# 2. 复制产物到本目录
-Copy-Item -Recurse dist/scoreleap-transcriber/* apps/scoreleap/src-tauri/resources/scoreleap-transcriber/
-# 3. 构建安装包
-pnpm tauri build
-```
+- `scoreleap-transcriber-native.exe`
+- `onnxruntime.dll`
+- `onnxruntime_providers_shared.dll`
+- `LICENSE.onnxruntime.txt`
+- `ThirdPartyNotices.onnxruntime.txt`
+- `runtime-manifest.json`
 
-注意：Windows Build workflow（tag 触发）若直接打包，本目录为占位内容；正式发布前需先注入 Worker。
+Basic Pitch 模型不随安装包分发，而是由应用的模型管理器按需下载、验签和校验。
+本目录不得出现 Python、虚拟环境、第三方 Python 包或 `.onnx` 模型。
