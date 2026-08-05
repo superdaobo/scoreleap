@@ -205,6 +205,14 @@ pub fn model_status(app: &AppHandle, state: &ModelState) -> ModelStatusView {
     status.total_bytes = runtime.total_bytes.or(status.total_bytes);
     status.source = runtime.source.clone().or(status.source);
     status.error = runtime.error.clone().or(status.error);
+    tracing::info!(
+        status = %status.status,
+        configured = status.configured,
+        installed = ?status.installed_version,
+        latest = ?status.latest_version,
+        model_error = ?status.error,
+        "模型状态"
+    );
     status
 }
 
