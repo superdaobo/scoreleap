@@ -297,7 +297,7 @@ impl TranscriptionService {
             cmd.arg("--frame-threshold").arg(value.to_string());
         }
         if let Some(value) = options.minimum_note_ms {
-            cmd.arg("--minimum-note-ms").arg(value.to_string());
+            cmd.arg("--minimum-note-length-ms").arg(value.to_string());
         }
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = match cmd.spawn() {

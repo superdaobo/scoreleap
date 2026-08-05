@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use scoreleap_transcription::{
-    JobStatus, TranscriptionErrorCode, TranscriptionEvent, TranscriptionService, WorkerSpec,
+    JobStatus, TranscriptionErrorCode, TranscriptionEvent, TranscriptionOptions, TranscriptionService, WorkerSpec,
 };
 
 const FAKE_WORKER_PS1: &str = r#"
@@ -255,4 +255,43 @@ fn chinese_and_space_paths_work() {
     let imports = h.imports.lock().unwrap();
     assert_eq!(imports[0].1, "测试 音频（音频转录）");
     std::fs::remove_dir_all(&h.data_dir).ok();
+}
+
+const ARG_CAPTURE_WORKER_PS1: &str = r#"
+param($command)
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+function Emit($obj) { Write-Output ($obj | ConvertTo-Json -Compress -Depth 4) }
+$inputPath = $args[[Array]::IndexOf($args, '--input') + 1]
+$midiPath = $args[[Array]::IndexOf($args, '--output-midi') + 1]
+$metadataPath = $args[[Array]::IndexOf($args, '--output-metadata') + 1]
+$requestId = $args[[Array]::IndexOf($args, '--request-id') + 1]
+$minNote = $args[[Array]::IndexOf($args, '--minimum-note-length-ms') + 1]
+Emit @{schema_version=1; type='ready'; request_id=$requestId; worker_version='0.1.0-test'}
+[System.IO.File]::WriteAllBytes($midiPath, [byte[]]@(0x4D,0x54,0x68,0x64,0x00,0x00,0x00,0x06,0x00,0x00,0x00,0x01,0x00,0x60,0x4D,0x54,0x72,0x6B,0x00,0x00,0x00,0x0B,0x00,0x90,0x3C,0x64,0x60,0x80,0x3C,0x00,0x00,0xFF,0x2F,0x00))
+[System.IO.File]::WriteAllText($metadataPath, $minNote)
+Emit @{schema_version=1; type='result'; request_id=$requestId; midi_path=$midiPath; metadata_path=$metadataPath; note_count=3; elapsed_ms=100}
+exit 0
+"#;
+
+#[test]
+fn minimum_note_override_is_forwarded_to_worker_with_exact_flag() {
+    let h = setup(ARG_CAPTURE_WORKER_PS1);
+    let input = make_input(&h.data_dir, "in.mp3");
+    let job_id = h
+        .service
+        .start_with_options(
+            &input,
+            TranscriptionOptions {
+                minimum_note_ms: Some(90),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        wait_terminal(&h.service, 20),
+        Some(JobStatus::Completed)
+    );
+    let meta_path = h.data_dir.join("jobs").join(&job_id).join("metadata.json");
+    let captured = std::fs::read_to_string(&meta_path).unwrap();
+    assert_eq!(captured, "90", "sidecar 必须收到 --minimum-note-length-ms=90");
 }
