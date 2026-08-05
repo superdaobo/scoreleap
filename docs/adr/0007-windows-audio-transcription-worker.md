@@ -14,6 +14,11 @@ Spike 实测（Windows + Python 3.11.15，basic-pitch 0.4.0）：
 
 ## 2. 为什么 MVP 使用 Python Worker
 
+> **状态：已被取代（2026-08-05）** 本 ADR 描述的 PyInstaller Python/TensorFlow Worker
+> 已由原生 ONNX 方案（`scoreleap-transcribe` + ONNX Runtime sidecar）完全取代，
+> `tools/transcription-worker` 已从仓库删除。历史决策与崩溃原因见本文；
+> 现行架构见 ADR-0006 / ADR-0008 与 `docs/ARCHITECTURE.md`。
+
 - Basic Pitch 官方推理栈基于 tensorflow/keras，Rust 侧无稳定同等实现；
 - Python Worker 以独立进程隔离模型崩溃与内存（峰值 ~522MB），主程序稳定性不受影响；
 - 可独立测试、独立打包（PyInstaller）、后续可整体替换（见 14）。
