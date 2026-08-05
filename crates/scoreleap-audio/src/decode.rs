@@ -1,7 +1,5 @@
 use crate::{AudioConfig, AudioError, AudioInfo, DecodedAudio};
-use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-};
+use rubato::{FftFixedInOut, Resampler};
 use std::fs::{self, File};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -13,7 +11,8 @@ use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-const RESAMPLE_CHUNK_SIZE: usize = 1_024;
+// 4096 在真实 44.1kHz 钢琴音频上兼顾频域精度与处理耗时；更大的块没有提升一致性。
+const RESAMPLE_FFT_CHUNK_SIZE: usize = 4_096;
 const MAX_OUTPUT_FRAMES: usize = 22_050 * 600;
 
 struct ValidatedFile {
@@ -349,25 +348,23 @@ fn resample_mono(
     source_rate: u32,
     target_rate: u32,
 ) -> Result<Vec<f32>, AudioError> {
-    let params = SincInterpolationParameters {
-        sinc_len: 256,
-        f_cutoff: 0.95,
-        interpolation: SincInterpolationType::Cubic,
-        oversampling_factor: 256,
-        window: WindowFunction::BlackmanHarris2,
-    };
-    let ratio = f64::from(target_rate) / f64::from(source_rate);
-    let mut resampler = SincFixedIn::<f32>::new(ratio, 1.0, params, RESAMPLE_CHUNK_SIZE, 1)
-        .map_err(|error| AudioError::ResamplerCreation {
-            message: error.to_string(),
-        })?;
+    let mut resampler = FftFixedInOut::<f32>::new(
+        source_rate as usize,
+        target_rate as usize,
+        RESAMPLE_FFT_CHUNK_SIZE,
+        1,
+    )
+    .map_err(|error| AudioError::ResamplerCreation {
+        message: error.to_string(),
+    })?;
     let expected = expected_output_frames(input.len(), source_rate, target_rate)?;
     let delay = resampler.output_delay();
     let required = expected
         .checked_add(delay)
         .ok_or(AudioError::FrameCountOverflow)?;
+    let output_block_frames = resampler.output_frames_next();
     let capacity = required
-        .checked_add(RESAMPLE_CHUNK_SIZE)
+        .checked_add(output_block_frames)
         .ok_or(AudioError::FrameCountOverflow)?;
     let mut output = Vec::with_capacity(capacity);
     let mut offset = 0usize;
@@ -389,7 +386,7 @@ fn resample_mono(
             })?;
         output.extend_from_slice(&chunk[0]);
     }
-    // Sinc 输出以 `output_delay` 个延迟帧开头；先完整刷新，再去头保尾。
+    // FFT 输出以 `output_delay` 个延迟帧开头；先完整刷新，再去头保尾。
     while output.len() < required {
         let no_input: Option<&[&[f32]]> = None;
         let chunk =
@@ -609,5 +606,18 @@ mod tests {
             .unwrap();
         assert!(front.1.abs() > 0.2, "front peak: {front:?}");
         assert!(tail.1.abs() > 0.2, "tail peak: {tail:?}");
+    }
+
+    #[test]
+    fn handles_empty_and_sub_block_inputs() {
+        let empty = resample_mono(&[], 44_100, 22_050).unwrap();
+        assert!(empty.is_empty());
+
+        let mut short = vec![0.0; 513];
+        short[256] = 1.0;
+        let output = resample_mono(&short, 44_100, 22_050).unwrap();
+        assert_eq!(output.len(), 257);
+        assert!(output.iter().all(|sample| sample.is_finite()));
+        assert!(output.iter().any(|sample| sample.abs() > 0.2));
     }
 }
