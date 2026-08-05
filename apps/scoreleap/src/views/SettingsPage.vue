@@ -2,15 +2,21 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore, type LogLevel } from '../stores/settingsStore'
+import { useTranscriptionStore } from '../stores/transcriptionStore'
+import { useModelStore } from '../stores/modelStore'
 
 const settings = useSettingsStore()
 const router = useRouter()
+const transcription = useTranscriptionStore()
+const modelStore = useModelStore()
 
 const showRiskModal = ref(false)
 const reAgree = ref(false)
 
 onMounted(() => {
   void settings.loadProfiles()
+  void modelStore.subscribe()
+  void modelStore.load()
 })
 
 const logLevels: { value: LogLevel; label: string }[] = [
@@ -22,6 +28,23 @@ const logLevels: { value: LogLevel; label: string }[] = [
 ]
 
 const profileMeta = computed(() => settings.current)
+const modelStatusLabel = computed(() => {
+  const labels: Record<string, string> = {
+    unknown: '正在检查',
+    configuration_missing: '缺少可信发布配置',
+    not_installed: '未安装',
+    ready: '可用',
+    update_available: '有更新',
+    downloading: '下载中',
+    failed: '失败',
+  }
+  return labels[modelStore.model.status] ?? modelStore.model.status
+})
+const modelSizeLabel = computed(() =>
+  modelStore.model.size_bytes == null
+    ? '—'
+    : `${(modelStore.model.size_bytes / 1024 / 1024).toFixed(1)} MB`,
+)
 const rangeText = computed(() =>
   profileMeta.value
     ? `${profileMeta.value.midi_low} – ${profileMeta.value.midi_high}`
@@ -39,6 +62,18 @@ function onLogLevelChange(): void {
 function openRiskModal(): void {
   reAgree.value = false
   showRiskModal.value = true
+}
+
+async function confirmModelDownload(): Promise<void> {
+  const version = modelStore.model.latest_version ?? '未知版本'
+  const confirmed = window.confirm(
+    `将从 ${modelStore.model.source ?? '签名目录声明的来源'} 下载模型 ${version}（${modelSizeLabel.value}）。音频不会上传。是否继续？`,
+  )
+  if (confirmed) await modelStore.download()
+}
+
+async function confirmRollback(): Promise<void> {
+  if (window.confirm('确认回滚到上一个已验证模型版本？')) await modelStore.rollback()
 }
 
 async function confirmReAgree(): Promise<void> {
@@ -106,6 +141,108 @@ async function confirmReAgree(): Promise<void> {
       <p v-if="settings.error" class="mt-3 text-xs text-red-300">
         {{ settings.error }}
       </p>
+    </section>
+
+    <!-- 音频转录与按需模型 -->
+    <section class="mt-4 rounded-xl border border-slate-800 bg-slate-800/40 p-6">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-medium text-slate-300">音频转录模型</h2>
+          <p class="mt-1 text-xs text-slate-500">
+            模型仅在你确认后下载；MP3/WAV/FLAC 音频始终只在本机处理。
+          </p>
+        </div>
+        <span class="rounded-full bg-slate-700/70 px-2.5 py-1 text-xs text-slate-200" aria-live="polite">
+          {{ modelStatusLabel }}
+        </span>
+      </div>
+
+      <dl class="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div><dt class="text-xs text-slate-500">已安装</dt><dd class="mt-1 text-slate-200">{{ modelStore.model.installed_version ?? '—' }}</dd></div>
+        <div><dt class="text-xs text-slate-500">最新版本</dt><dd class="mt-1 text-slate-200">{{ modelStore.model.latest_version ?? '—' }}</dd></div>
+        <div><dt class="text-xs text-slate-500">下载大小</dt><dd class="mt-1 text-slate-200">{{ modelSizeLabel }}</dd></div>
+        <div><dt class="text-xs text-slate-500">当前来源</dt><dd class="mt-1 text-slate-200">{{ modelStore.model.source ?? '—' }}</dd></div>
+      </dl>
+
+      <div v-if="modelStore.model.status === 'downloading'" class="mt-4" aria-live="polite">
+        <div class="flex justify-between text-xs text-slate-400">
+          <span>正在下载并校验</span><span>{{ modelStore.progressPercent }}%</span>
+        </div>
+        <progress
+          class="mt-2 h-2 w-full accent-indigo-500"
+          :value="modelStore.model.received_bytes"
+          :max="modelStore.model.total_bytes ?? 1"
+          aria-label="模型下载进度"
+        ></progress>
+      </div>
+
+      <p v-if="modelStore.model.error" class="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300" role="alert">
+        {{ modelStore.model.error }}
+      </p>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button
+          v-if="modelStore.model.status === 'not_installed' || modelStore.model.status === 'update_available' || modelStore.model.status === 'failed'"
+          type="button"
+          class="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500 disabled:opacity-40"
+          :disabled="modelStore.busy || !modelStore.model.configured"
+          aria-label="下载并验证转录模型"
+          @click="confirmModelDownload"
+        >
+          {{ modelStore.model.status === 'update_available' ? '确认更新' : modelStore.model.status === 'failed' ? '重试下载' : '下载模型' }}
+        </button>
+        <button
+          v-if="modelStore.model.status === 'downloading'"
+          type="button"
+          class="rounded-lg border border-red-500/40 px-4 py-2 text-sm text-red-300 hover:bg-red-500/10"
+          aria-label="取消模型下载"
+          @click="modelStore.cancel"
+        >取消下载</button>
+        <button
+          type="button"
+          class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+          :disabled="modelStore.busy || modelStore.model.status === 'downloading'"
+          @click="modelStore.checkUpdate"
+        >检查更新</button>
+        <button
+          v-if="modelStore.model.can_rollback"
+          type="button"
+          class="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-300 hover:bg-amber-500/10 disabled:opacity-40"
+          :disabled="modelStore.busy || modelStore.model.status === 'downloading'"
+          @click="confirmRollback"
+        >回滚版本</button>
+      </div>
+
+      <fieldset class="mt-6 border-t border-slate-700 pt-5">
+        <legend class="text-sm font-medium text-slate-300">识别预设</legend>
+        <div class="mt-3 grid gap-2 sm:grid-cols-3">
+          <label v-for="item in [
+            { value: 'balanced', label: '均衡', detail: '准确率与杂音的默认平衡' },
+            { value: 'detail', label: '细节', detail: '保留弱音，可能增加误音' },
+            { value: 'noise_reduced', label: '降噪', detail: '压制杂音，适合轻噪钢琴' },
+          ]" :key="item.value" class="cursor-pointer rounded-lg border border-slate-700 p-3 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-500/10">
+            <input v-model="transcription.preset" type="radio" name="transcription-preset" :value="item.value" class="accent-indigo-500" />
+            <span class="ml-2 text-sm text-slate-200">{{ item.label }}</span>
+            <span class="mt-1 block text-xs text-slate-500">{{ item.detail }}</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <label class="mt-5 flex items-center gap-2 text-sm text-slate-300">
+        <input v-model="transcription.advancedEnabled" type="checkbox" class="accent-indigo-500" />
+        启用高级阈值覆盖
+      </label>
+      <div class="mt-3 grid gap-4 sm:grid-cols-3" :class="{ 'opacity-50': !transcription.advancedEnabled }">
+        <label class="text-xs text-slate-400" for="onset-threshold">起音阈值（{{ transcription.onsetThreshold.toFixed(2) }}）
+          <input id="onset-threshold" v-model.number="transcription.onsetThreshold" type="range" min="0" max="1" step="0.01" class="mt-2 w-full accent-indigo-500" :disabled="!transcription.advancedEnabled" />
+        </label>
+        <label class="text-xs text-slate-400" for="frame-threshold">持续音阈值（{{ transcription.frameThreshold.toFixed(2) }}）
+          <input id="frame-threshold" v-model.number="transcription.frameThreshold" type="range" min="0" max="1" step="0.01" class="mt-2 w-full accent-indigo-500" :disabled="!transcription.advancedEnabled" />
+        </label>
+        <label class="text-xs text-slate-400" for="minimum-note-ms">最短音符（毫秒）
+          <input id="minimum-note-ms" v-model.number="transcription.minimumNoteMs" type="number" min="10" max="5000" class="mt-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200" :disabled="!transcription.advancedEnabled" />
+        </label>
+      </div>
     </section>
 
     <!-- 快捷键 -->
@@ -259,23 +396,5 @@ async function confirmReAgree(): Promise<void> {
         </div>
       </div>
     </div>
-  <!-- 音频转录（实验）说明 -->
-  <div class="mt-8 rounded-xl border border-slate-800 bg-slate-800/30 p-5">
-    <h2 class="text-sm font-semibold text-slate-300">🎧 音频转录（实验功能）</h2>
-    <ul class="mt-3 space-y-2 text-sm text-slate-400">
-      <li>• 在「曲谱库」点击「从音频转录」选择 MP3，自动识别音符并生成可演奏曲谱。</li>
-      <li>• 转录在本地完成（Basic Pitch 模型），音频与结果不上传、不联网。</li>
-      <li>• 首次转录需加载本地模型（约 30 秒），模型随软件分发，无需额外下载。</li>
-      <li>• 完整歌曲（人声/鼓/伴奏）可能出现杂音符，建议使用钢琴独奏或旋律清晰的音频。</li>
-      <li>• 支持 MP3（≤200MB，≤10 分钟）；同一时间仅允许一个转录任务。</li>
-      <li>
-        • 转录组件路径通过环境变量
-        <code class="rounded bg-slate-700/60 px-1 text-xs text-slate-300"
-          >SCORELEAP_WORKER_PATH</code
-        >
-        指定（安装版内置，无需设置）。
-      </li>
-    </ul>
-  </div>
   </div>
 </template>

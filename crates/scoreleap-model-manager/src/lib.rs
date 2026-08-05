@@ -7,7 +7,8 @@ mod manager;
 mod manifest;
 
 pub use download::{
-    AttemptState, CancellationToken, DownloadAttempt, DownloadPlan, DownloadStatus,
+    AttemptState, CancellationToken, DownloadAttempt, DownloadPhase, DownloadPlan,
+    DownloadProgress, DownloadStatus, HttpDownloadConfig, HttpSourceDownloader, ProgressObserver,
     SourceDownloader,
 };
 pub use error::ModelManagerError;
@@ -19,6 +20,19 @@ pub use manifest::{
     SignatureEnvelope, SignedModelCatalog, SignedModelManifest, SourceKind,
     SUPPORTED_SCHEMA_VERSION,
 };
+
+/// 从应用显式提供的 32 字节 Ed25519 公钥构造信任根。
+pub fn verifying_key_from_hex(
+    value: &str,
+) -> Result<ed25519_dalek::VerifyingKey, ModelManagerError> {
+    let bytes = hex::decode(value.trim())
+        .map_err(|error| ModelManagerError::InvalidSignature(error.to_string()))?;
+    let bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+        ModelManagerError::InvalidSignature("Ed25519 公钥必须为 32 字节十六进制".into())
+    })?;
+    ed25519_dalek::VerifyingKey::from_bytes(&bytes)
+        .map_err(|error| ModelManagerError::InvalidSignature(error.to_string()))
+}
 
 #[cfg(test)]
 mod tests;

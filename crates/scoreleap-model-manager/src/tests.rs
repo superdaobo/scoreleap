@@ -135,6 +135,35 @@ fn signature_success_and_failure() {
 }
 
 #[test]
+fn latest_catalog_version_is_selected_after_catalog_verification() {
+    let temp = TempDir::new().unwrap();
+    let artifact = b"onnx-model";
+    let archive = make_zip(&[("model/model.onnx", artifact)]);
+    let models = vec![
+        signed_manifest("1.2.9", &archive, artifact),
+        signed_manifest("1.10.0", &archive, artifact),
+    ];
+    let catalog = ModelCatalog {
+        schema_version: 1,
+        models,
+    };
+    let signature = key().sign(&catalog_signing_bytes(&catalog).unwrap());
+    let signed = SignedModelCatalog {
+        catalog,
+        signature: SignatureEnvelope {
+            algorithm: "ed25519".into(),
+            key_id: "test-key".into(),
+            signature_hex: hex::encode(signature.to_bytes()),
+        },
+    };
+    let latest = manager(&temp)
+        .latest_from_catalog(&signed, "basic-pitch")
+        .unwrap()
+        .unwrap();
+    assert_eq!(latest.manifest.version, "1.10.0");
+}
+
+#[test]
 fn hash_mismatch_rejects_all_sources() {
     let temp = TempDir::new().unwrap();
     let artifact = b"onnx-model";

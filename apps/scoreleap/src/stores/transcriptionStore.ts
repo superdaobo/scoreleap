@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import type { TranscriptionJobView } from '../types'
+import { computed, ref, watch } from 'vue'
+import type { TranscriptionJobView, TranscriptionPreset } from '../types'
 import * as api from '../services/api'
 import {
   setEventSubscribeImpl,
@@ -31,15 +31,19 @@ export const STAGE_INDETERMINATE: Record<string, boolean> = {
 
 /** 错误码 → 用户可读文案（#47 验收：错误区分） */
 export const ERROR_LABELS: Record<string, string> = {
-  WORKER_NOT_FOUND: '未找到转录组件（请重新安装或设置 SCORELEAP_WORKER_PATH）',
+  WORKER_NOT_FOUND: '未找到原生转录组件，请重新安装完整版本',
   WORKER_START_FAILED: '转录组件启动失败',
   TRANSCRIPTION_BUSY: '已有转录任务在进行中，请稍后再试',
   INVALID_AUDIO_PATH: '音频文件不存在或无法读取',
-  UNSUPPORTED_AUDIO_FORMAT: '仅支持 MP3 格式',
+  UNSUPPORTED_AUDIO_FORMAT: '仅支持 MP3、WAV 或 FLAC 格式',
   AUDIO_FILE_TOO_LARGE: '音频文件超过 200MB 上限',
   AUDIO_TOO_LONG: '音频超过 10 分钟上限',
-  AUDIO_DECODE_FAILED: '音频解码失败（文件可能已损坏或不是有效 MP3）',
+  AUDIO_DECODE_FAILED: '音频解码失败（文件可能已损坏）',
+  MODEL_MISSING: '转录模型文件缺失',
+  MODEL_DOWNLOAD_REQUIRED: '首次转录前需要在设置中下载模型',
   MODEL_LOAD_FAILED: '本地模型加载失败',
+  RUNTIME_MISSING: 'ONNX Runtime 缺失，请重新安装完整版本',
+  RUNTIME_LOAD_FAILED: 'ONNX Runtime 加载失败',
   INFERENCE_FAILED: '音符识别失败',
   MIDI_WRITE_FAILED: 'MIDI 生成失败',
   MIDI_VALIDATION_FAILED: '生成的 MIDI 无法通过校验',
@@ -57,6 +61,18 @@ export interface PendingConfirm {
 }
 
 export const useTranscriptionStore = defineStore('transcription', () => {
+  const preset = ref<TranscriptionPreset>(readPreset())
+  const advancedEnabled = ref(false)
+  const onsetThreshold = ref(0.5)
+  const frameThreshold = ref(0.3)
+  const minimumNoteMs = ref(58)
+  watch(preset, (value) => {
+    try {
+      localStorage.setItem('scoreleap-transcription-preset', value)
+    } catch {
+      // WebView 存储不可用时保持本次会话设置。
+    }
+  })
   /** 当前/最近一次转录任务（终态保留展示） */
   const job = ref<TranscriptionJobView | null>(null)
   /** 错误信息（红色提示条） */
@@ -132,7 +148,12 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     error.value = null
     starting.value = true
     try {
-      const jobId = await api.startAudioTranscription(path)
+      const jobId = await api.startAudioTranscription(path, {
+        preset: preset.value,
+        onset_threshold: advancedEnabled.value ? onsetThreshold.value : null,
+        frame_threshold: advancedEnabled.value ? frameThreshold.value : null,
+        minimum_note_ms: advancedEnabled.value ? minimumNoteMs.value : null,
+      })
       const view = await api.getAudioTranscriptionStatus()
       if (view && view.job_id === jobId) {
         job.value = view
@@ -146,7 +167,7 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     }
   }
 
-  /** 设置待确认任务（选择 MP3 后调用） */
+  /** 设置待确认任务（选择受支持音频后调用） */
   function askConfirm(path: string, name: string, sizeBytes: number): void {
     pendingConfirm.value = { path, name, size_bytes: sizeBytes }
   }
@@ -206,8 +227,23 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     askConfirm,
     dismissConfirm,
     errorLabel,
+    preset,
+    advancedEnabled,
+    onsetThreshold,
+    frameThreshold,
+    minimumNoteMs,
   }
 })
+
+function readPreset(): TranscriptionPreset {
+  try {
+    const value = localStorage.getItem('scoreleap-transcription-preset')
+    if (value === 'balanced' || value === 'detail' || value === 'noise_reduced') return value
+  } catch {
+    // 使用默认值。
+  }
+  return 'balanced'
+}
 
 /** stage 名 → 任务状态（与后端 JobStatus 对齐） */
 function stageFromName(stage: string): TranscriptionJobView['status'] {

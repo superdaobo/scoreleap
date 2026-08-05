@@ -11,6 +11,8 @@ import type {
   TranscriptionCompletedPayload,
   TranscriptionErrorPayload,
   TranscriptionStagePayload,
+  ModelDownloadProgress,
+  ModelStatusView,
 } from '../types'
 
 export type { UnlistenFn } from '@tauri-apps/api/event'
@@ -92,5 +94,21 @@ export function subscribeTranscriptionError(
 ): Promise<UnlistenFn> {
   return subscribeImpl('transcription://error', (payload) =>
     handler(payload as TranscriptionErrorPayload),
+  )
+}
+
+export function subscribeModelProgress(
+  handler: (payload: ModelDownloadProgress) => void,
+): Promise<UnlistenFn> {
+  return subscribeImpl('model://progress', (payload) =>
+    handler(payload as ModelDownloadProgress),
+  )
+}
+
+export function subscribeModelState(
+  handler: (payload: ModelStatusView) => void,
+): Promise<UnlistenFn> {
+  return subscribeImpl('model://state', (payload) =>
+    handler(payload as ModelStatusView),
   )
 }
