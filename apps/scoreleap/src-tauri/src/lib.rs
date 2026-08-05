@@ -202,12 +202,12 @@ fn resolve_worker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
         }
         tracing::warn!("SCORELEAP_WORKER_PATH 不存在: {}", p.display());
     }
-    // 打包 sidecar：externalBin 输出到 resource_dir 的上级（tauri 约定）
+    // 打包 worker：随安装包分发（bundle.resources → resource_dir/scoreleap-transcriber/）
     if let Some(p) = app
         .path()
         .resource_dir()
         .ok()
-        .map(|d| d.join("../scoreleap-transcriber.exe"))
+        .map(|d| d.join("scoreleap-transcriber/scoreleap-transcriber.exe"))
     {
         if p.exists() {
             return Some(p);
