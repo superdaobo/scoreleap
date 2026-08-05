@@ -211,7 +211,6 @@ async function confirmReAgree(): Promise<void> {
         </dl>
         <p v-if="diagnostics.error" class="mt-2 text-red-300">错误：{{ diagnostics.error }}</p>
       </div>
-      </div>
 
       <dl class="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div><dt class="text-xs text-slate-500">已安装</dt><dd class="mt-1 text-slate-200">{{ modelStore.model.installed_version ?? '—' }}</dd></div>
