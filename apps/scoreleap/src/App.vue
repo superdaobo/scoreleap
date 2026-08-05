@@ -100,7 +100,7 @@ onMounted(async () => {
         </button>
         <span
           class="hidden rounded border border-outline-variant bg-surface-container-high px-2 py-1 font-code-sm text-code-sm text-on-surface-variant lg:inline"
-          >v0.2.4</span
+          >v0.3.0</span
         >
       </div>
     </header>

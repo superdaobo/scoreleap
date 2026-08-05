@@ -407,7 +407,7 @@ async function confirmReAgree(): Promise<void> {
             <dl class="mt-3 space-y-2 font-code-sm text-code-sm">
               <div class="flex gap-2">
                 <dt class="w-16 text-on-surface-variant">版本</dt>
-                <dd class="text-on-surface">0.2.4</dd>
+                <dd class="text-on-surface">0.3.0</dd>
               </div>
               <div class="flex gap-2">
                 <dt class="w-16 text-on-surface-variant">许可证</dt>
