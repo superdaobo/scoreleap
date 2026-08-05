@@ -201,7 +201,7 @@ struct TxState(Mutex<Option<TranscriptionService>>);
 fn resolve_worker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     model::resolve_packaged_file(
         app,
-        std::path::Path::new("scoreleap-transcriber/scoreleap-transcriber.exe"),
+        std::path::Path::new("scoreleap-transcriber/scoreleap-transcriber-native.exe"),
         "SCORELEAP_WORKER_PATH",
     )
 }
