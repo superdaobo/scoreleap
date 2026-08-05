@@ -6,13 +6,13 @@
 
 ```powershell
 python -m pip install -r requirements.txt
-python -m scoreleap_transcription_eval evaluate reference.mid prediction.mid
+python -m scoreleap_transcription_eval evaluate reference.mid prediction.mid --manifest manifest.json --sample-id maestro-hidden-001
 python -m scoreleap_transcription_eval compare-formats lossless.mid encoded.mid
 python -m scoreleap_transcription_eval validate-manifest manifest.json --verify-files
 python -m unittest discover -s tests -v
 ```
 
-`evaluate` 输出起音 Precision、Recall、F1，带尾音 Precision、Recall、F1，误音数/分钟、起音绝对误差中位数，以及预测相对参考的线性漂移（ms/min 与截距）。`compare-formats` 额外输出 `note_consistency_f1`。
+`evaluate` 输出起音 Precision、Recall、F1，带尾音 Precision、Recall、F1，误音数/分钟、起音绝对误差中位数，以及预测相对参考的线性漂移（ms/min 与截距）。误音数/分钟严格使用所选 manifest 片段时长，即使参考 MIDI 为空也不会回退到 MIDI 尾音时间。`compare-formats` 额外输出 `note_consistency_f1`，其未经 manifest 定义的误音率固定为 `null`。
 
 ## 清单格式
 
@@ -31,7 +31,7 @@ python -m unittest discover -s tests -v
 }
 ```
 
-干净样本的 `noise` 必须为 `null`；加噪样本必须同时提供非负整数 `seed` 与有限数值 `snr_db`。相对路径以清单所在目录为基准；只有传入 `--verify-files` 时才读取文件并复核 SHA-256。
+干净样本的 `noise` 必须为 `null`；加噪样本必须同时提供非负整数 `seed` 与有限数值 `snr_db`。相对路径以清单所在目录为数据集根；绝对路径、`..` 越界和指向根外的符号链接均会被拒绝。只有传入 `--verify-files` 时才以流式方式读取文件并复核 SHA-256，单个资产最大 200MiB。
 
 ## 数据边界
 

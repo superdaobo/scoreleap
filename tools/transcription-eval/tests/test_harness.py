@@ -7,6 +7,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import mido
 
@@ -55,6 +56,17 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(result.onset_match_count, 1)
         self.assertEqual(result.prediction_note_count - result.onset_match_count, 1)
 
+    def test_offset_matching_supports_crossing_pairs(self) -> None:
+        refs = [Note(60, 0.00, 1.00), Note(60, 0.04, 2.00)]
+        preds = [Note(60, 0.01, 2.00), Note(60, 0.03, 1.00)]
+        result = evaluate_notes(refs, preds, 2.0)
+        self.assertEqual(result.onset_offset_match_count, 2)
+        self.assertEqual(result.onset_offset_f1, 1.0)
+
+    def test_invalid_explicit_duration_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "有限正数"):
+            evaluate_notes([], [], 0.0)
+
 
 class CliAndManifestTests(unittest.TestCase):
     def test_compare_formats_reports_identical_f1(self) -> None:
@@ -68,7 +80,39 @@ class CliAndManifestTests(unittest.TestCase):
             with contextlib.redirect_stdout(stdout):
                 exit_code = main(["compare-formats", str(first), str(second)])
             self.assertEqual(exit_code, 0)
-            self.assertEqual(json.loads(stdout.getvalue())["note_consistency_f1"], 1.0)
+            result = json.loads(stdout.getvalue())
+            self.assertEqual(result["note_consistency_f1"], 1.0)
+            self.assertIsNone(result["false_notes_per_minute"])
+
+    def test_evaluate_uses_manifest_duration_for_empty_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            audio = root / "sample.wav"
+            reference = root / "empty.mid"
+            prediction = root / "prediction.mid"
+            audio.write_bytes(b"generated")
+            write_midi(reference, [])
+            write_midi(prediction, [(60, 0.0, 1.0)])
+            sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "samples": [{
+                    "id": "empty", "source": "generated", "split": "test",
+                    "audio": {"path": audio.name, "sha256": sha(audio)},
+                    "reference_midi": {"path": reference.name, "sha256": sha(reference)},
+                    "segment": {"start_seconds": 5, "end_seconds": 15},
+                    "noise": None,
+                }],
+            }), encoding="utf-8")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main([
+                    "evaluate", str(reference), str(prediction),
+                    "--manifest", str(manifest), "--sample-id", "empty",
+                ])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(json.loads(stdout.getvalue())["false_notes_per_minute"], 6.0)
 
     def test_manifest_validates_schema_and_hashes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -90,8 +134,73 @@ class CliAndManifestTests(unittest.TestCase):
             }
             manifest_path = root / "manifest.json"
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            loaded = load_and_validate_manifest(manifest_path, verify_files=True)
+            with mock.patch.object(Path, "read_bytes", side_effect=AssertionError("SHA 必须流式读取")):
+                loaded = load_and_validate_manifest(manifest_path, verify_files=True)
             self.assertEqual(loaded["samples"][0]["id"], "generated-1")
+
+    def test_manifest_rejects_asset_path_outside_dataset_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "dataset"
+            root.mkdir()
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "samples": [{
+                    "id": "escape", "source": "generated", "split": "test",
+                    "audio": {"path": "../outside.wav", "sha256": "0" * 64},
+                    "reference_midi": {"path": "reference.mid", "sha256": "0" * 64},
+                    "segment": {"start_seconds": 0, "end_seconds": 1}, "noise": None,
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "越过数据集根目录"):
+                load_and_validate_manifest(manifest)
+
+    def test_manifest_rejects_symlink_that_escapes_dataset_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "dataset"
+            root.mkdir()
+            outside = base / "outside.wav"
+            outside.write_bytes(b"outside")
+            link = root / "linked.wav"
+            try:
+                link.symlink_to(outside)
+            except OSError as error:
+                self.skipTest(f"当前系统不允许创建符号链接: {error}")
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "samples": [{
+                    "id": "link", "source": "generated", "split": "test",
+                    "audio": {"path": link.name, "sha256": "0" * 64},
+                    "reference_midi": {"path": "reference.mid", "sha256": "0" * 64},
+                    "segment": {"start_seconds": 0, "end_seconds": 1}, "noise": None,
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "越过数据集根目录"):
+                load_and_validate_manifest(manifest)
+
+    def test_manifest_limits_asset_size_before_hashing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            audio = root / "large.wav"
+            reference = root / "reference.mid"
+            audio.write_bytes(b"123456789")
+            write_midi(reference, [(60, 0.0, 1.0)])
+            sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "samples": [{
+                    "id": "large", "source": "generated", "split": "test",
+                    "audio": {"path": audio.name, "sha256": sha(audio)},
+                    "reference_midi": {"path": reference.name, "sha256": sha(reference)},
+                    "segment": {"start_seconds": 0, "end_seconds": 1}, "noise": None,
+                }],
+            }), encoding="utf-8")
+            with mock.patch("scoreleap_transcription_eval.manifest.MAX_ASSET_BYTES", 8):
+                with self.assertRaisesRegex(ValueError, "资产超过"):
+                    load_and_validate_manifest(manifest, verify_files=True)
 
     def test_manifest_requires_noise_seed_and_snr_as_pair(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -122,6 +231,21 @@ class CliAndManifestTests(unittest.TestCase):
                 }],
             }), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "noise"):
+                load_and_validate_manifest(path)
+
+    def test_manifest_rejects_missing_segment_duration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps({
+                "schema_version": 1,
+                "samples": [{
+                    "id": "bad", "source": "generated", "split": "test",
+                    "audio": {"path": "x", "sha256": "0" * 64},
+                    "reference_midi": {"path": "y", "sha256": "0" * 64},
+                    "segment": {"start_seconds": 0}, "noise": None,
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "end_seconds"):
                 load_and_validate_manifest(path)
 
 
