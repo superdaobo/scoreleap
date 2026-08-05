@@ -39,6 +39,17 @@ const performing = computed(() =>
   ['Playing', 'Paused', 'Countdown'].includes(playback.state),
 )
 
+/** 页面背景图：与 stitch 模板各页面对应（本地打包，离线可用） */
+const bgImage = computed(() => {
+  const p = route.path
+  if (p.startsWith('/arrange')) return '/bg-arrange.webp'
+  if (p.startsWith('/settings')) return '/bg-settings.webp'
+  if (p.startsWith('/doc')) return '/bg-library2.webp'
+  if (p.startsWith('/test')) return '/bg-library3.webp'
+  if (p === '/') return '/bg-library.webp'
+  return null // risk 页模板为纯网格背景
+})
+
 async function onEmergencyStop(): Promise<void> {
   try {
     await emergencyStop()
@@ -104,6 +115,13 @@ onMounted(async () => {
         >
       </div>
     </header>
+
+    <!-- 页面背景图（模板素材，本地打包） -->
+    <div
+      v-if="bgImage"
+      class="pointer-events-none fixed inset-0 z-[-1] bg-cover bg-center opacity-30"
+      :style="{ backgroundImage: `url(${bgImage})` }"
+    ></div>
 
     <!-- 崩溃提示 -->
     <div

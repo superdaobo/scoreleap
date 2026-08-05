@@ -422,10 +422,14 @@ pub fn run() {
                 app.path()
                     .resource_dir()
                     .ok()
+                    .map(|d| d.join("resources/game-profiles")),
+                app.path()
+                    .resource_dir()
+                    .ok()
                     .map(|d| d.join("game-profiles")),
                 Some(
                     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .join("../../../game-profiles"),
+                        .join("resources/game-profiles"),
                 ),
                 app.path()
                     .app_data_dir()
