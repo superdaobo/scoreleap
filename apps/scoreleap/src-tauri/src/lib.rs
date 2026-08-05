@@ -3,6 +3,7 @@
 //! 注意：命令函数**必须为非 pub**——tauri-macros 对 pub 命令生成
 //! `#[macro_export]` + `pub use`，与 rustc 的宏命名空间检查冲突（E0255）。
 
+mod diagnostics;
 mod model;
 
 use std::sync::{Arc, Mutex};
@@ -485,6 +486,7 @@ pub fn run() {
             get_sequence_notes,
             compile,
             start_playback,
+            diagnostics::diagnose_transcription,
             pause_playback,
             resume_playback,
             stop_playback,

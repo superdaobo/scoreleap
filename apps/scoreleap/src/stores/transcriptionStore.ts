@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import type { TranscriptionJobView, TranscriptionPreset } from '../types'
 import * as api from '../services/api'
+import { errorText } from '../utils/format'
 import {
   setEventSubscribeImpl,
   subscribeTranscriptionCompleted,
@@ -160,7 +161,7 @@ export const useTranscriptionStore = defineStore('transcription', () => {
       }
       pendingConfirm.value = null
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     } finally {
       starting.value = false
@@ -193,7 +194,7 @@ export const useTranscriptionStore = defineStore('transcription', () => {
         job.value.message = '任务已取消'
       }
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
     }
   }
 
@@ -202,7 +203,7 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     try {
       job.value = await api.getAudioTranscriptionStatus()
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
     }
   }
 

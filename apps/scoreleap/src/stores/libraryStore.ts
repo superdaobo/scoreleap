@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { errorText } from '../utils/format'
 import { ref } from 'vue'
 import type { DocumentSummary, ImportSummary, TrackSummary } from '../types'
 import * as api from '../services/api'
@@ -23,7 +24,7 @@ export const useLibraryStore = defineStore('library', () => {
     try {
       documents.value = await api.listDocuments()
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
     } finally {
       loading.value = false
     }
@@ -37,7 +38,7 @@ export const useLibraryStore = defineStore('library', () => {
       await loadDocuments()
       return summary
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     }
   }
@@ -62,7 +63,7 @@ export const useLibraryStore = defineStore('library', () => {
         .filter((t) => t.enabled)
         .map((t) => t.id)
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     }
   }

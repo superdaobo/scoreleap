@@ -33,10 +33,11 @@ pub enum TranscriptionPreset {
 
 impl TranscriptionPreset {
     fn as_str(self) -> &'static str {
+        // 与 sidecar PianoPreset 契约一致（config.rs from_str 接受 piano_* 前缀）
         match self {
-            Self::Balanced => "balanced",
-            Self::Detail => "detail",
-            Self::NoiseReduced => "noise_reduced",
+            Self::Balanced => "piano_balanced",
+            Self::Detail => "piano_detail",
+            Self::NoiseReduced => "piano_noise_reduced",
         }
     }
 }

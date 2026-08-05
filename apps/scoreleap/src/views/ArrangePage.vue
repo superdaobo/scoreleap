@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useLibraryStore } from '../stores/libraryStore'
+import { errorText } from '../utils/format'
 import { usePlaybackStore } from '../stores/playbackStore'
 import { compile as compileApi, currentProfile, getSequenceNotes, loadProfile, listProfiles } from '../services/api'
 import type {
@@ -35,7 +36,7 @@ async function ensureProfile(): Promise<void> {
       store.error = '未找到可用的游戏 Profile（缺少 game-profiles 目录）。'
     }
   } catch (e) {
-    store.error = String(e)
+    store.error = errorText(e)
   }
 }
 
@@ -86,7 +87,7 @@ async function doCompile(): Promise<void> {
       notesData.value = []
     }
   } catch (e) {
-    store.error = String(e)
+    store.error = errorText(e)
   } finally {
     compiling.value = false
   }

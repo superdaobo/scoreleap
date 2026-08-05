@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { checkForeground, listKeymap, testKey } from '../services/api'
+import { errorText } from '../utils/format'
 import type { ForegroundInfo, KeymapEntry } from '../types'
 
 const testing = ref(false)
@@ -16,7 +17,7 @@ async function refreshForeground(): Promise<void> {
     fg.value = await checkForeground()
   } catch (e) {
     fg.value = null
-    lastError.value = String(e)
+    lastError.value = errorText(e)
   }
 }
 
@@ -31,7 +32,7 @@ async function sendKey(scan: number, label: string): Promise<void> {
     const msg = await testKey(scan)
     lastHint.value = `已注入「${label}」：${msg}`
   } catch (e) {
-    lastError.value = String(e)
+    lastError.value = errorText(e)
   } finally {
     testing.value = false
     testingKey.value = null
@@ -45,7 +46,7 @@ onMounted(() => {
       keymap.value = k
     })
     .catch((e) => {
-      lastError.value = String(e)
+      lastError.value = errorText(e)
     })
   // 前台窗口变化时自动刷新（1s 轮询，仅在测试页活跃时）
   const timer = setInterval(refreshForeground, 1000)

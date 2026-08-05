@@ -266,9 +266,10 @@ $midiPath = $args[[Array]::IndexOf($args, '--output-midi') + 1]
 $metadataPath = $args[[Array]::IndexOf($args, '--output-metadata') + 1]
 $requestId = $args[[Array]::IndexOf($args, '--request-id') + 1]
 $minNote = $args[[Array]::IndexOf($args, '--minimum-note-length-ms') + 1]
+$preset = $args[[Array]::IndexOf($args, '--preset') + 1]
 Emit @{schema_version=1; type='ready'; request_id=$requestId; worker_version='0.1.0-test'}
 [System.IO.File]::WriteAllBytes($midiPath, [byte[]]@(0x4D,0x54,0x68,0x64,0x00,0x00,0x00,0x06,0x00,0x00,0x00,0x01,0x00,0x60,0x4D,0x54,0x72,0x6B,0x00,0x00,0x00,0x0B,0x00,0x90,0x3C,0x64,0x60,0x80,0x3C,0x00,0x00,0xFF,0x2F,0x00))
-[System.IO.File]::WriteAllText($metadataPath, $minNote)
+[System.IO.File]::WriteAllText($metadataPath, "$preset|$minNote")
 Emit @{schema_version=1; type='result'; request_id=$requestId; midi_path=$midiPath; metadata_path=$metadataPath; note_count=3; elapsed_ms=100}
 exit 0
 "#;
@@ -293,5 +294,5 @@ fn minimum_note_override_is_forwarded_to_worker_with_exact_flag() {
     );
     let meta_path = h.data_dir.join("jobs").join(&job_id).join("metadata.json");
     let captured = std::fs::read_to_string(&meta_path).unwrap();
-    assert_eq!(captured, "90", "sidecar 必须收到 --minimum-note-length-ms=90");
+    assert_eq!(captured, "piano_balanced|90", "sidecar 必须收到 --preset=piano_balanced 与 --minimum-note-length-ms=90");
 }

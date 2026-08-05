@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { errorText } from '../utils/format'
 import { ref } from 'vue'
 import type { GameProfile } from '../types'
 import * as api from '../services/api'
@@ -58,7 +59,7 @@ export const useSettingsStore = defineStore('settings', () => {
         await selectProfile(profiles.value[0])
       }
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
     }
   }
 
@@ -69,7 +70,7 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       current.value = await api.loadProfile(id)
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     }
   }

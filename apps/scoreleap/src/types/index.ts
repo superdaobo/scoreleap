@@ -98,6 +98,23 @@ export type ModelStatus =
   | 'downloading'
   | 'failed'
 
+export interface DiagnosticsView {
+  model_status: string
+  model_configured: boolean
+  model_installed_version: string | null
+  model_path: string | null
+  model_file_exists: boolean
+  sidecar_exe_path: string | null
+  sidecar_exe_exists: boolean
+  onnx_runtime_path: string | null
+  onnx_runtime_exists: boolean
+  onnx_runtime_version: string | null
+  jobs_dir: string | null
+  jobs_dir_writable: boolean
+  app_data_dir: string | null
+  error: string | null
+}
+
 export interface ModelStatusView {
   status: ModelStatus
   configured: boolean

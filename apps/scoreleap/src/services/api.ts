@@ -6,6 +6,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import type {
   ArrangementOptions,
   CompileSummary,
+  DiagnosticsView,
   DocumentSummary,
   ForegroundInfo,
   GameProfile,
@@ -152,6 +153,9 @@ export function pickAudioFile(): Promise<string | null> {
   })
 }
 
+export function diagnoseTranscription() {
+  return invoke<DiagnosticsView>('diagnose_transcription')
+}
 export function getTranscriptionModelStatus(): Promise<ModelStatusView> {
   return invoke<ModelStatusView>('get_transcription_model_status')
 }

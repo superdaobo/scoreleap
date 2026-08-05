@@ -4,11 +4,43 @@ import { useRouter } from 'vue-router'
 import { useSettingsStore, type LogLevel } from '../stores/settingsStore'
 import { useTranscriptionStore } from '../stores/transcriptionStore'
 import { useModelStore } from '../stores/modelStore'
+import * as api from '../services/api'
+import { errorText } from '../utils/format'
+import type { DiagnosticsView } from '../types'
 
 const settings = useSettingsStore()
 const router = useRouter()
 const transcription = useTranscriptionStore()
 const modelStore = useModelStore()
+const diagnostics = ref<DiagnosticsView | null>(null)
+const diagnosticsRunning = ref(false)
+
+async function runDiagnostics(): Promise<void> {
+  diagnosticsRunning.value = true
+  diagnostics.value = null
+  try {
+    diagnostics.value = await api.diagnoseTranscription()
+  } catch (e) {
+    diagnostics.value = {
+      model_status: 'failed',
+      model_configured: false,
+      model_installed_version: null,
+      model_path: null,
+      model_file_exists: false,
+      sidecar_exe_path: null,
+      sidecar_exe_exists: false,
+      onnx_runtime_path: null,
+      onnx_runtime_exists: false,
+      onnx_runtime_version: null,
+      jobs_dir: null,
+      jobs_dir_writable: false,
+      app_data_dir: null,
+      error: errorText(e),
+    }
+  } finally {
+    diagnosticsRunning.value = false
+  }
+}
 
 const showRiskModal = ref(false)
 const reAgree = ref(false)
@@ -155,6 +187,30 @@ async function confirmReAgree(): Promise<void> {
         <span class="rounded-full bg-slate-700/70 px-2.5 py-1 text-xs text-slate-200" aria-live="polite">
           {{ modelStatusLabel }}
         </span>
+        <button
+          type="button"
+          class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 transition hover:border-slate-400 disabled:opacity-50"
+          :disabled="diagnosticsRunning"
+          @click="runDiagnostics()"
+        >
+          {{ diagnosticsRunning ? '诊断中…' : '运行转录诊断' }}
+        </button>
+      </div>
+      <div
+        v-if="diagnostics"
+        class="mt-4 rounded-lg border border-slate-700 bg-slate-900/60 p-4 text-xs text-slate-300"
+      >
+        <h3 class="mb-2 text-sm font-medium text-slate-200">转录环境诊断</h3>
+        <dl class="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+          <div><dt class="inline text-slate-500">模型状态：</dt><dd class="inline">{{ diagnostics.model_status }}（configured={{ diagnostics.model_configured }}，已装={{ diagnostics.model_installed_version ?? '无' }}）</dd></div>
+          <div><dt class="inline text-slate-500">模型文件：</dt><dd class="inline">{{ diagnostics.model_file_exists ? '存在' : '缺失' }} {{ diagnostics.model_path ?? '' }}</dd></div>
+          <div><dt class="inline text-slate-500">转录器：</dt><dd class="inline">{{ diagnostics.sidecar_exe_exists ? '存在' : '缺失' }} {{ diagnostics.sidecar_exe_path ?? '' }}</dd></div>
+          <div><dt class="inline text-slate-500">ONNX Runtime：</dt><dd class="inline">{{ diagnostics.onnx_runtime_exists ? '存在' : '缺失' }}（{{ diagnostics.onnx_runtime_version ?? '?' }}）</dd></div>
+          <div><dt class="inline text-slate-500">任务目录可写：</dt><dd class="inline">{{ diagnostics.jobs_dir_writable ? '是' : '否' }} {{ diagnostics.jobs_dir ?? '' }}</dd></div>
+          <div><dt class="inline text-slate-500">应用数据：</dt><dd class="inline">{{ diagnostics.app_data_dir ?? '?' }}</dd></div>
+        </dl>
+        <p v-if="diagnostics.error" class="mt-2 text-red-300">错误：{{ diagnostics.error }}</p>
+      </div>
       </div>
 
       <dl class="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">

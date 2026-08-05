@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { ModelStatusView } from '../types'
 import * as api from '../services/api'
+import { errorText } from '../utils/format'
 import {
   subscribeModelProgress,
   subscribeModelState,
@@ -40,7 +41,7 @@ export const useModelStore = defineStore('transcription-model', () => {
     try {
       model.value = await api.getTranscriptionModelStatus()
     } catch (error) {
-      model.value = { ...EMPTY_STATUS, status: 'failed', error: String(error) }
+      model.value = { ...EMPTY_STATUS, status: 'failed', error: errorText(error) }
     }
   }
 
@@ -49,7 +50,7 @@ export const useModelStore = defineStore('transcription-model', () => {
     try {
       model.value = await api.checkTranscriptionModelUpdate()
     } catch (error) {
-      model.value.error = String(error)
+      model.value.error = errorText(error)
     } finally {
       busy.value = false
     }
@@ -63,7 +64,7 @@ export const useModelStore = defineStore('transcription-model', () => {
       model.value.error = null
     } catch (error) {
       model.value.status = 'failed'
-      model.value.error = String(error)
+      model.value.error = errorText(error)
     } finally {
       busy.value = false
     }
@@ -73,7 +74,7 @@ export const useModelStore = defineStore('transcription-model', () => {
     try {
       await api.cancelTranscriptionModelDownload()
     } catch (error) {
-      model.value.error = String(error)
+      model.value.error = errorText(error)
     }
   }
 
@@ -82,7 +83,7 @@ export const useModelStore = defineStore('transcription-model', () => {
     try {
       model.value = await api.rollbackTranscriptionModel()
     } catch (error) {
-      model.value.error = String(error)
+      model.value.error = errorText(error)
     } finally {
       busy.value = false
     }

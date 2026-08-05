@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { errorText } from '../utils/format'
 import { ref } from 'vue'
 import type { PlaybackBackend, PlaybackProgress, PlaybackState } from '../types'
 import * as api from '../services/api'
@@ -106,7 +107,7 @@ export const usePlaybackStore = defineStore('playback', () => {
       pressedKeys.value = status.pressed_keys
       applyState(status.state)
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     }
   }
@@ -115,7 +116,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     try {
       await api.pausePlayback()
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     }
   }
@@ -124,7 +125,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     try {
       await api.resumePlayback()
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     }
   }
@@ -133,7 +134,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     try {
       await api.stopPlayback()
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     }
   }
@@ -142,7 +143,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     try {
       await api.emergencyStop()
     } catch (e) {
-      error.value = String(e)
+      error.value = errorText(e)
       throw e
     }
   }
