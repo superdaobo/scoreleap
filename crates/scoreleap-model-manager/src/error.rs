@@ -41,4 +41,8 @@ pub enum ModelManagerError {
     CacheInvalid(String),
     #[error("没有可回滚版本: {0}")]
     NoRollbackVersion(String),
+    #[error("模型信任配置缺失: {0}")]
+    TrustConfigurationMissing(String),
+    #[error("下载配置无效: {0}")]
+    InvalidDownloadConfiguration(String),
 }

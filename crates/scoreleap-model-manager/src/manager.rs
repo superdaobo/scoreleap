@@ -2,8 +2,8 @@ use crate::archive::extract_verified_archive;
 pub use crate::archive::ExtractionLimits;
 use crate::manifest::{compare_version, safe_relative_path, validate_component};
 use crate::{
-    verify_file, verify_signed_manifest, CancellationToken, DownloadPlan, ModelManagerError,
-    SignedModelManifest, SourceDownloader,
+    verify_file, verify_signed_catalog, verify_signed_manifest, CancellationToken, DownloadPlan,
+    ModelManagerError, SignedModelCatalog, SignedModelManifest, SourceDownloader,
 };
 use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
@@ -197,6 +197,35 @@ impl ModelManager {
     ) -> Result<Option<ModelVersionRef>, ModelManagerError> {
         validate_component(model_id, "model_id")?;
         read_optional_json(&self.state_path(model_id, "active.json"))
+    }
+
+    pub fn last_good_version(
+        &self,
+        model_id: &str,
+    ) -> Result<Option<ModelVersionRef>, ModelManagerError> {
+        validate_component(model_id, "model_id")?;
+        read_optional_json(&self.state_path(model_id, "last-good.json"))
+    }
+
+    /// 验证整个目录签名后，返回与当前引擎兼容的最高版本。
+    pub fn latest_from_catalog(
+        &self,
+        catalog: &SignedModelCatalog,
+        model_id: &str,
+    ) -> Result<Option<SignedModelManifest>, ModelManagerError> {
+        validate_component(model_id, "model_id")?;
+        verify_signed_catalog(catalog, &self.verifying_key)?;
+        let mut candidates = Vec::new();
+        for signed in &catalog.catalog.models {
+            if signed.manifest.model_id == model_id && self.verify_for_engine(signed).is_ok() {
+                candidates.push(signed.clone());
+            }
+        }
+        candidates.sort_by(|left, right| {
+            compare_version(&left.manifest.version, &right.manifest.version)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        Ok(candidates.pop())
     }
 
     pub fn activate(&self, model_id: &str, version: &str) -> Result<(), ModelManagerError> {

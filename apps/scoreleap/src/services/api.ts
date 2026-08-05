@@ -16,6 +16,8 @@ import type {
   PlaybackStatus,
   TrackSummary,
   TranscriptionJobView,
+  TranscriptionOptions,
+  ModelStatusView,
 } from '../types'
 
 /** 导入 MIDI 文件（命令 import_midi） */
@@ -124,8 +126,11 @@ export async function pickMidiFile(): Promise<string | null> {
 }
 
 /** 启动音频转录（命令 start_audio_transcription；单任务并发） */
-export function startAudioTranscription(path: string): Promise<string> {
-  return invoke<string>('start_audio_transcription', { path })
+export function startAudioTranscription(
+  path: string,
+  options: TranscriptionOptions,
+): Promise<string> {
+  return invoke<string>('start_audio_transcription', { path, options })
 }
 
 /** 取消当前转录任务（命令 cancel_audio_transcription） */
@@ -138,13 +143,34 @@ export function getAudioTranscriptionStatus(): Promise<TranscriptionJobView | nu
   return invoke<TranscriptionJobView | null>('get_audio_transcription_status')
 }
 
-/** 选择 MP3 音频文件（打开对话框；取消返回 null） */
+/** 选择受支持的本地音频文件（打开对话框；取消返回 null） */
 export function pickAudioFile(): Promise<string | null> {
   return open({
     multiple: false,
     directory: false,
-    filters: [{ name: 'MP3 音频', extensions: ['mp3'] }],
+    filters: [{ name: '音频', extensions: ['mp3', 'wav', 'flac'] }],
   })
+}
+
+export function getTranscriptionModelStatus(): Promise<ModelStatusView> {
+  return invoke<ModelStatusView>('get_transcription_model_status')
+}
+
+export function checkTranscriptionModelUpdate(): Promise<ModelStatusView> {
+  return invoke<ModelStatusView>('check_transcription_model_update')
+}
+
+/** 必须由用户确认界面触发，后端不会自动下载模型。 */
+export function downloadTranscriptionModel(): Promise<void> {
+  return invoke<void>('download_transcription_model')
+}
+
+export function cancelTranscriptionModelDownload(): Promise<void> {
+  return invoke<void>('cancel_transcription_model_download')
+}
+
+export function rollbackTranscriptionModel(): Promise<ModelStatusView> {
+  return invoke<ModelStatusView>('rollback_transcription_model')
 }
 
 /** 音频文件信息（命令 get_audio_file_info；确认界面显示大小） */

@@ -1,4 +1,4 @@
-//! 转录服务：管理 Python Worker 生命周期、解析 JSON Lines、导入结果 MIDI。
+//! 转录服务：管理原生 ONNX sidecar 生命周期、解析 JSON Lines、导入结果 MIDI。
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{TranscriptionError, TranscriptionErrorCode};
 use crate::job::{JobStatus, TranscriptionJob};
@@ -18,6 +18,62 @@ use crate::protocol::WorkerMsg;
 pub struct WorkerSpec {
     pub program: String,
     pub args: Vec<String>,
+    pub model_path: PathBuf,
+    pub onnx_runtime_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionPreset {
+    #[default]
+    Balanced,
+    Detail,
+    NoiseReduced,
+}
+
+impl TranscriptionPreset {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Balanced => "balanced",
+            Self::Detail => "detail",
+            Self::NoiseReduced => "noise_reduced",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TranscriptionOptions {
+    #[serde(default)]
+    pub preset: TranscriptionPreset,
+    pub onset_threshold: Option<f32>,
+    pub frame_threshold: Option<f32>,
+    pub minimum_note_ms: Option<u32>,
+}
+
+impl TranscriptionOptions {
+    fn validate(&self) -> Result<(), TranscriptionError> {
+        for (name, value) in [
+            ("onset_threshold", self.onset_threshold),
+            ("frame_threshold", self.frame_threshold),
+        ] {
+            if value.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value)) {
+                return Err(TranscriptionError::new(
+                    TranscriptionErrorCode::WorkerProtocolError,
+                    format!("{name} 必须在 0..=1 范围内"),
+                ));
+            }
+        }
+        if self
+            .minimum_note_ms
+            .is_some_and(|value| !(10..=5000).contains(&value))
+        {
+            return Err(TranscriptionError::new(
+                TranscriptionErrorCode::WorkerProtocolError,
+                "minimum_note_ms 必须在 10..=5000 范围内",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// 事件（src-tauri 层转 app.emit）。
@@ -73,7 +129,7 @@ pub struct TranscriptionService {
 
 /// 输入限制（与 Worker 端一致）。
 pub const MAX_FILE_BYTES: u64 = 200 * 1024 * 1024;
-pub const ALLOWED_EXTENSIONS: &[&str] = &["mp3"];
+pub const ALLOWED_EXTENSIONS: &[&str] = &["mp3", "wav", "flac"];
 
 impl TranscriptionService {
     pub fn new(
@@ -120,7 +176,7 @@ impl TranscriptionService {
         if !ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
             return Err(TranscriptionError::new(
                 TranscriptionErrorCode::UnsupportedAudioFormat,
-                format!("仅支持 MP3，收到 .{ext}"),
+                format!("仅支持 MP3/WAV/FLAC，收到 .{ext}"),
             ));
         }
         let size = std::fs::metadata(p).map(|m| m.len()).map_err(|e| {
@@ -143,6 +199,15 @@ impl TranscriptionService {
 
     /// 启动转录。返回 job_id。
     pub fn start(&self, input_path: &str) -> Result<String, TranscriptionError> {
+        self.start_with_options(input_path, TranscriptionOptions::default())
+    }
+
+    /// 使用预设和可选高级阈值启动转录。
+    pub fn start_with_options(
+        &self,
+        input_path: &str,
+        options: TranscriptionOptions,
+    ) -> Result<String, TranscriptionError> {
         {
             let guard = self.inner.lock().unwrap();
             if let Some(a) = guard.as_ref() {
@@ -155,6 +220,26 @@ impl TranscriptionService {
             }
         }
         self.validate_input(input_path)?;
+        options.validate()?;
+        if !self.worker.model_path.is_file() {
+            return Err(TranscriptionError::new(
+                TranscriptionErrorCode::ModelDownloadRequired,
+                "尚未安装可用的转录模型，请先在设置中下载",
+            ));
+        }
+        if self
+            .worker
+            .onnx_runtime_path
+            .as_ref()
+            .is_some_and(|path| !path.is_file())
+        {
+            return Err(TranscriptionError::new(
+                TranscriptionErrorCode::RuntimeMissing,
+                "未找到 ONNX Runtime，请重新安装完整版本",
+            ));
+        }
+        *self.last_error_code.lock().unwrap() = None;
+        *self.last_error_message.lock().unwrap() = None;
 
         let job_id = format!("job-{}", uuid::Uuid::new_v4());
         let request_id = format!("req-{}", uuid::Uuid::new_v4());
@@ -188,20 +273,33 @@ impl TranscriptionService {
         // 启动 Worker（参数数组；无 shell；路径由后端决定）
         let mut cmd = Command::new(&self.worker.program);
         cmd.args(&self.worker.args)
-            .args([
-                "transcribe",
-                "--request-id",
-                &request_id,
-                "--input",
-                input_path,
-                "--output-midi",
-                midi_path.to_str().unwrap(),
-                "--output-metadata",
-                metadata_path.to_str().unwrap(),
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .arg("transcribe")
+            .arg("--request-id")
+            .arg(&request_id)
+            .arg("--input")
+            .arg(input_path)
+            .arg("--output-midi")
+            .arg(&midi_path)
+            .arg("--output-metadata")
+            .arg(&metadata_path)
+            .arg("--model")
+            .arg(&self.worker.model_path)
+            .arg("--preset")
+            .arg(options.preset.as_str())
+            .stdin(Stdio::null());
+        if let Some(runtime) = &self.worker.onnx_runtime_path {
+            cmd.arg("--onnx-runtime").arg(runtime);
+        }
+        if let Some(value) = options.onset_threshold {
+            cmd.arg("--onset-threshold").arg(value.to_string());
+        }
+        if let Some(value) = options.frame_threshold {
+            cmd.arg("--frame-threshold").arg(value.to_string());
+        }
+        if let Some(value) = options.minimum_note_ms {
+            cmd.arg("--minimum-note-ms").arg(value.to_string());
+        }
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -217,13 +315,14 @@ impl TranscriptionService {
         let stderr = child.stderr.take().expect("stderr piped");
         let child_shared = Arc::new(Mutex::new(Some(child)));
         let cancelled = Arc::new(AtomicBool::new(false));
+        let saw_result = Arc::new(AtomicBool::new(false));
 
         {
             let mut guard = self.inner.lock().unwrap();
             *guard = Some(ActiveJob {
                 job: TranscriptionJob {
                     job_id: job_id.clone(),
-                    request_id,
+                    request_id: request_id.clone(),
                     source_name: source_name.clone(),
                     status: JobStatus::Starting,
                     stage: "starting".into(),
@@ -248,12 +347,14 @@ impl TranscriptionService {
         });
 
         // stdout 解析线程
-        {
+        let stdout_thread = {
             let inner = self.inner.clone();
             let on_event = self.on_event.clone();
             let last_code = self.last_error_code.clone();
             let last_msg = self.last_error_message.clone();
             let jid = job_id.clone();
+            let expected_request_id = request_id.clone();
+            let saw_result = saw_result.clone();
             std::thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines() {
@@ -263,19 +364,29 @@ impl TranscriptionService {
                         continue;
                     }
                     match WorkerMsg::parse_line(line) {
-                        Ok(msg) => {
-                            handle_worker_msg(&inner, &on_event, &last_code, &last_msg, &jid, msg)
-                        }
+                        Ok(msg) => handle_worker_msg(
+                            &inner,
+                            &on_event,
+                            &last_code,
+                            &last_msg,
+                            &saw_result,
+                            &jid,
+                            &expected_request_id,
+                            msg,
+                        ),
                         Err(_) => {
                             tracing::warn!(job_id = %jid, "Worker 输出非 JSON 行: {line}");
+                            *last_code.lock().unwrap() =
+                                Some(TranscriptionErrorCode::WorkerProtocolError.as_str().into());
+                            *last_msg.lock().unwrap() = Some("Worker 输出了无效 JSONL".into());
                         }
                     }
                 }
-            });
-        }
+            })
+        };
 
         // stderr 日志线程
-        {
+        let stderr_thread = {
             let jid = job_id.clone();
             std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
@@ -283,8 +394,8 @@ impl TranscriptionService {
                     let Ok(line) = line else { break };
                     tracing::warn!(job_id = %jid, "worker-stderr: {line}");
                 }
-            });
-        }
+            })
+        };
 
         // 等待线程（轮询退出 → 验证 → 导入 → 完成/失败/取消）
         {
@@ -296,6 +407,7 @@ impl TranscriptionService {
             let jid = job_id.clone();
             let child_shared2 = child_shared.clone();
             let cancelled2 = cancelled.clone();
+            let saw_result2 = saw_result.clone();
             std::thread::spawn(move || {
                 // 等待退出（100ms 轮询；取消时 kill）
                 let exit_code: Option<i32> = loop {
@@ -320,6 +432,10 @@ impl TranscriptionService {
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 };
+
+                // 子进程退出后先等待管道读取完成，确保最后一条 result/error 不会与退出判断竞态。
+                let _ = stdout_thread.join();
+                let _ = stderr_thread.join();
 
                 // 取出 active job（仅当仍是本 job）
                 let mut active: Option<(TranscriptionJob, PathBuf)> = None;
@@ -359,7 +475,10 @@ impl TranscriptionService {
 
                 // 退出码映射
                 let code = exit_code.unwrap_or(9);
-                if code == 0 {
+                if code == 0
+                    && last_code.lock().unwrap().is_none()
+                    && saw_result2.load(Ordering::Acquire)
+                {
                     // 验证 MIDI
                     job.status = JobStatus::ImportingMidi;
                     job.stage = "importing_midi".into();
@@ -418,11 +537,17 @@ impl TranscriptionService {
                     }
                 } else {
                     // 非零退出
-                    let (code, message) = map_exit_code(
-                        code,
-                        &last_code.lock().unwrap().clone(),
-                        &last_msg.lock().unwrap().clone(),
-                    );
+                    let protocol_code = last_code.lock().unwrap().clone().or_else(|| {
+                        (code == 0).then(|| {
+                            TranscriptionErrorCode::WorkerProtocolError
+                                .as_str()
+                                .to_string()
+                        })
+                    });
+                    let protocol_message = last_msg.lock().unwrap().clone().or_else(|| {
+                        (code == 0).then(|| "Worker 未返回有效 result 消息".to_string())
+                    });
+                    let (code, message) = map_exit_code(code, &protocol_code, &protocol_message);
                     job.status = JobStatus::Failed;
                     job.error_code = Some(code.to_string());
                     job.error_message = Some(message.clone());
@@ -440,8 +565,14 @@ impl TranscriptionService {
         let (child, cancelled) = {
             let guard = self.inner.lock().unwrap();
             match guard.as_ref() {
-                Some(a) => (a.child.clone(), a.cancelled.clone()),
+                Some(a) if !a.job.status.is_terminal() => (a.child.clone(), a.cancelled.clone()),
                 None => {
+                    return Err(TranscriptionError::new(
+                        TranscriptionErrorCode::JobCancelled,
+                        "没有进行中的转录任务",
+                    ));
+                }
+                Some(_) => {
                     return Err(TranscriptionError::new(
                         TranscriptionErrorCode::JobCancelled,
                         "没有进行中的转录任务",
@@ -488,6 +619,15 @@ fn map_exit_code(
     last_code: &Option<String>,
     last_msg: &Option<String>,
 ) -> (String, String) {
+    // Worker 已通过 JSONL 给出结构化错误时，以协议内容为准，避免退出码降级信息。
+    if let Some(worker_code) = last_code {
+        return (
+            worker_code.clone(),
+            last_msg
+                .clone()
+                .unwrap_or_else(|| "转录组件返回错误".into()),
+        );
+    }
     let mapped = match code {
         2 => Some((
             TranscriptionErrorCode::WorkerProtocolError,
@@ -499,7 +639,7 @@ fn map_exit_code(
         )),
         4 => Some((
             TranscriptionErrorCode::AudioDecodeFailed,
-            "MP3 解码失败".into(),
+            "音频解码失败".into(),
         )),
         5 => Some((
             TranscriptionErrorCode::ModelLoadFailed,
@@ -520,17 +660,16 @@ fn map_exit_code(
         )),
         _ => None,
     };
-    if let Some((c, m)) = mapped {
-        (c.as_str().into(), m)
-    } else {
-        let code = last_code
-            .clone()
-            .unwrap_or_else(|| "WORKER_EXITED_UNEXPECTEDLY".into());
-        let msg = last_msg
-            .clone()
-            .unwrap_or_else(|| format!("Worker 异常退出（退出码 {code}）"));
-        (code, msg)
-    }
+    mapped
+        .map(|(code, message)| (code.as_str().into(), message))
+        .unwrap_or_else(|| {
+            (
+                TranscriptionErrorCode::WorkerExitedUnexpectedly
+                    .as_str()
+                    .into(),
+                format!("Worker 异常退出（退出码 {code}）"),
+            )
+        })
 }
 
 fn finish_job(
@@ -563,9 +702,17 @@ fn handle_worker_msg(
     on_event: &EventFn,
     last_code: &Mutex<Option<String>>,
     last_msg: &Mutex<Option<String>>,
+    saw_result: &AtomicBool,
     job_id: &str,
+    expected_request_id: &str,
     msg: WorkerMsg,
 ) {
+    if msg.schema_version != Some(1) || msg.request_id.as_deref() != Some(expected_request_id) {
+        *last_code.lock().unwrap() =
+            Some(TranscriptionErrorCode::WorkerProtocolError.as_str().into());
+        *last_msg.lock().unwrap() = Some("Worker schema_version 或 request_id 无效".into());
+        return;
+    }
     match msg.msg_type.as_str() {
         "ready" => {
             if let Some(v) = msg.worker_version {
@@ -607,14 +754,33 @@ fn handle_worker_msg(
             let mut guard = inner.lock().unwrap();
             if let Some(a) = guard.as_mut() {
                 if a.job.job_id == job_id {
+                    let paths_match = msg.midi_path.as_deref() == a.job.midi_path.as_deref()
+                        && msg.metadata_path.as_deref() == a.job.metadata_path.as_deref();
+                    if !paths_match || msg.elapsed_ms.is_none() || msg.note_count.is_none() {
+                        *last_code.lock().unwrap() =
+                            Some(TranscriptionErrorCode::WorkerProtocolError.as_str().into());
+                        *last_msg.lock().unwrap() =
+                            Some("Worker result 字段缺失或输出路径不匹配".into());
+                        return;
+                    }
                     a.job.note_count = msg.note_count;
                     a.job.elapsed_ms = msg.elapsed_ms.unwrap_or(0);
+                    saw_result.store(true, Ordering::Release);
                 }
             }
         }
         "error" => {
-            *last_code.lock().unwrap() = msg.code.clone();
-            *last_msg.lock().unwrap() = msg.message.clone();
+            *last_code.lock().unwrap() = Some(
+                msg.code
+                    .clone()
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| TranscriptionErrorCode::WorkerProtocolError.as_str().into()),
+            );
+            *last_msg.lock().unwrap() = msg
+                .message
+                .clone()
+                .or(msg.detail.clone())
+                .or_else(|| Some("Worker 返回了未说明的错误".into()));
             tracing::warn!(job_id, "worker-error: {:?} {:?}", msg.code, msg.message);
         }
         other => {

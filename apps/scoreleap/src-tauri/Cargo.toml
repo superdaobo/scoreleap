@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 scoreleap-core = { path = "../../../crates/scoreleap-core" }
 scoreleap-transcription = { path = "../../../crates/scoreleap-transcription" }
+scoreleap-model-manager = { path = "../../../crates/scoreleap-model-manager" }
 scoreleap-arranger = { path = "../../../crates/scoreleap-arranger" }
 scoreleap-music-ir = { path = "../../../crates/scoreleap-music-ir" }
 scoreleap-sequence = { path = "../../../crates/scoreleap-sequence" }

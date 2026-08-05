@@ -80,6 +80,45 @@ export interface TranscriptionErrorPayload {
   message: string
 }
 
+export type TranscriptionPreset = 'balanced' | 'detail' | 'noise_reduced'
+
+export interface TranscriptionOptions {
+  preset: TranscriptionPreset
+  onset_threshold: number | null
+  frame_threshold: number | null
+  minimum_note_ms: number | null
+}
+
+export type ModelStatus =
+  | 'unknown'
+  | 'configuration_missing'
+  | 'not_installed'
+  | 'ready'
+  | 'update_available'
+  | 'downloading'
+  | 'failed'
+
+export interface ModelStatusView {
+  status: ModelStatus
+  configured: boolean
+  model_id: string
+  installed_version: string | null
+  latest_version: string | null
+  size_bytes: number | null
+  source: string | null
+  received_bytes: number
+  total_bytes: number | null
+  error: string | null
+  can_rollback: boolean
+}
+
+export interface ModelDownloadProgress {
+  phase: 'connecting' | 'receiving' | 'completed'
+  received_bytes: number
+  total_bytes: number | null
+  source: string
+}
+
 /** 卷帘预览音符（get_sequence_notes 返回值；编排后、按键编译前） */
 export interface NoteView {
   note: number

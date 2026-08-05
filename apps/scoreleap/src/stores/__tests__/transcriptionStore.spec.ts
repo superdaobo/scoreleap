@@ -54,7 +54,12 @@ describe('transcriptionStore', () => {
     vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
     const store = useTranscriptionStore()
     await store.start('C:/audio.mp3')
-    expect(api.startAudioTranscription).toHaveBeenCalledWith('C:/audio.mp3')
+    expect(api.startAudioTranscription).toHaveBeenCalledWith('C:/audio.mp3', {
+      preset: 'balanced',
+      onset_threshold: null,
+      frame_threshold: null,
+      minimum_note_ms: null,
+    })
     expect(store.job?.job_id).toBe('job-1')
     expect(store.running).toBe(true)
   })
@@ -155,7 +160,26 @@ describe('transcriptionStore', () => {
   it('errorLabel 区分结构化错误码', async () => {
     const store = useTranscriptionStore()
     expect(store.errorLabel('AUDIO_FILE_TOO_LARGE', 'x')).toContain('200MB')
-    expect(store.errorLabel('WORKER_NOT_FOUND', 'x')).toContain('SCORELEAP_WORKER_PATH')
+    expect(store.errorLabel('WORKER_NOT_FOUND', 'x')).toContain('原生转录组件')
+    expect(store.errorLabel('MODEL_DOWNLOAD_REQUIRED', 'x')).toContain('下载模型')
     expect(store.errorLabel(null, '回退文案')).toBe('回退文案')
+  })
+
+  it('高级阈值启用后随预设传给原生 sidecar 命令', async () => {
+    vi.mocked(api.startAudioTranscription).mockResolvedValue('job-1')
+    vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
+    const store = useTranscriptionStore()
+    store.preset = 'noise_reduced'
+    store.advancedEnabled = true
+    store.onsetThreshold = 0.7
+    store.frameThreshold = 0.55
+    store.minimumNoteMs = 90
+    await store.start('C:/noise.flac')
+    expect(api.startAudioTranscription).toHaveBeenCalledWith('C:/noise.flac', {
+      preset: 'noise_reduced',
+      onset_threshold: 0.7,
+      frame_threshold: 0.55,
+      minimum_note_ms: 90,
+    })
   })
 })

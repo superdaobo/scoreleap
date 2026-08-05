@@ -3,12 +3,15 @@
 //! 注意：命令函数**必须为非 pub**——tauri-macros 对 pub 命令生成
 //! `#[macro_export]` + `pub use`，与 rustc 的宏命名空间检查冲突（E0255）。
 
+mod model;
+
 use std::sync::{Arc, Mutex};
 
 use scoreleap_core::{AppState, CoreError};
 use scoreleap_sequence::PlaybackState;
 use scoreleap_transcription::{
-    TranscriptionError, TranscriptionEvent, TranscriptionService, WorkerSpec,
+    TranscriptionError, TranscriptionErrorCode, TranscriptionEvent, TranscriptionOptions,
+    TranscriptionService, WorkerSpec,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -193,30 +196,21 @@ fn get_audio_file_info(path: String) -> Result<scoreleap_core::AudioFileInfo, Co
 /// 转录服务状态（惰性创建；终态任务保留供前端查询）。
 struct TxState(Mutex<Option<TranscriptionService>>);
 
-/// Worker 可执行文件路径解析：环境变量 → 打包 sidecar → 开发目录。
+/// 原生 sidecar 路径解析：发布版仅接受资源目录，开发版允许显式环境变量覆盖。
 fn resolve_worker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
-    if let Ok(p) = std::env::var("SCORELEAP_WORKER_PATH") {
-        let p = std::path::PathBuf::from(p);
-        if p.exists() {
-            return Some(p);
-        }
-        tracing::warn!("SCORELEAP_WORKER_PATH 不存在: {}", p.display());
-    }
-    // 打包 worker：随安装包分发（bundle.resources → resource_dir/scoreleap-transcriber/）
-    if let Some(p) = app
-        .path()
-        .resource_dir()
-        .ok()
-        .map(|d| d.join("scoreleap-transcriber/scoreleap-transcriber.exe"))
-    {
-        if p.exists() {
-            return Some(p);
-        }
-    }
-    // 开发目录（venv console script）
-    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../tools/transcription-worker/.venv/Scripts/scoreleap-transcriber.exe");
-    dev.exists().then_some(dev)
+    model::resolve_packaged_file(
+        app,
+        std::path::Path::new("scoreleap-transcriber/scoreleap-transcriber.exe"),
+        "SCORELEAP_WORKER_PATH",
+    )
+}
+
+fn resolve_onnx_runtime_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    model::resolve_packaged_file(
+        app,
+        std::path::Path::new("scoreleap-transcriber/onnxruntime.dll"),
+        "SCORELEAP_ONNXRUNTIME_PATH",
+    )
 }
 
 fn get_or_init_transcription(
@@ -225,14 +219,25 @@ fn get_or_init_transcription(
 ) -> Result<TranscriptionService, TranscriptionError> {
     let mut guard = tx.0.lock().unwrap();
     if let Some(svc) = guard.as_ref() {
-        return Ok(svc.clone());
+        if svc.status().is_some_and(|job| !job.status.is_terminal()) {
+            return Ok(svc.clone());
+        }
     }
     // 解析 Worker 路径
     let worker_program = resolve_worker_path(app).ok_or_else(|| {
         TranscriptionError::new(
             scoreleap_transcription::TranscriptionErrorCode::WorkerNotFound,
-            "未找到转录 Worker（设置 SCORELEAP_WORKER_PATH 或安装完整版）",
+            "未找到原生转录组件，请重新安装完整版本",
         )
+    })?;
+    let runtime_path = resolve_onnx_runtime_path(app).ok_or_else(|| {
+        TranscriptionError::new(
+            TranscriptionErrorCode::RuntimeMissing,
+            "未找到 ONNX Runtime，请重新安装完整版本",
+        )
+    })?;
+    let model_path = model::resolve_active_model(app).map_err(|message| {
+        TranscriptionError::new(TranscriptionErrorCode::ModelDownloadRequired, message)
     })?;
     tracing::info!("转录 Worker: {}", worker_program.display());
     let data_dir = app
@@ -295,6 +300,8 @@ fn get_or_init_transcription(
         WorkerSpec {
             program: worker_program.to_string_lossy().to_string(),
             args: vec![],
+            model_path,
+            onnx_runtime_path: Some(runtime_path),
         },
         on_event,
         importer,
@@ -310,10 +317,49 @@ fn start_audio_transcription(
     state: State<'_, AppState>,
     tx: State<'_, TxState>,
     path: String,
+    options: TranscriptionOptions,
 ) -> Result<String, TranscriptionError> {
     let _ = &state;
     let svc = get_or_init_transcription(&app, &tx)?;
-    svc.start(&path)
+    svc.start_with_options(&path, options)
+}
+
+#[tauri::command]
+fn get_transcription_model_status(
+    app: AppHandle,
+    state: State<'_, model::ModelState>,
+) -> model::ModelStatusView {
+    model::model_status(&app, &state)
+}
+
+/// 重新读取并验证签名目录；不会在用户确认前下载模型。
+#[tauri::command]
+fn check_transcription_model_update(
+    app: AppHandle,
+    state: State<'_, model::ModelState>,
+) -> model::ModelStatusView {
+    model::model_status(&app, &state)
+}
+
+#[tauri::command]
+fn download_transcription_model(
+    app: AppHandle,
+    state: State<'_, model::ModelState>,
+) -> Result<(), String> {
+    model::start_download(app, &state)
+}
+
+#[tauri::command]
+fn cancel_transcription_model_download(state: State<'_, model::ModelState>) -> Result<(), String> {
+    model::cancel_download(&state)
+}
+
+#[tauri::command]
+fn rollback_transcription_model(
+    app: AppHandle,
+    state: State<'_, model::ModelState>,
+) -> Result<model::ModelStatusView, String> {
+    model::rollback(&app, &state)
 }
 
 /// 取消当前转录任务。
@@ -351,6 +397,7 @@ pub fn run() {
         .plugin(tauri_plugin_scoreleap_input::init())
         .manage(AppState::default())
         .manage(TxState(Mutex::new(None)))
+        .manage(model::ModelState::default())
         .setup(|app| {
             // Profile 目录查找优先级：资源目录（安装包内置）→ 仓库开发目录 → 用户数据目录
             let mut profiles_dir: Option<std::path::PathBuf> = None;
@@ -446,6 +493,11 @@ pub fn run() {
             cancel_audio_transcription,
             get_audio_transcription_status,
             get_audio_file_info,
+            get_transcription_model_status,
+            check_transcription_model_update,
+            download_transcription_model,
+            cancel_transcription_model_download,
+            rollback_transcription_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

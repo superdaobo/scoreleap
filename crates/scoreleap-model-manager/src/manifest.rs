@@ -23,7 +23,7 @@ pub struct ArtifactDescriptor {
     pub sha256: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     Cdn,
@@ -142,7 +142,17 @@ pub fn verify_signed_catalog(
         &signed.signature,
         key,
     )?;
+    let mut identities = HashSet::new();
     for model in &signed.catalog.models {
+        let identity = (
+            model.manifest.model_id.clone(),
+            model.manifest.version.clone(),
+        );
+        if !identities.insert(identity) {
+            return Err(ModelManagerError::InvalidManifest(
+                "目录包含重复的模型版本".into(),
+            ));
+        }
         verify_signed_manifest(model, key)?;
     }
     Ok(())
@@ -235,6 +245,14 @@ pub(crate) fn validate_manifest(manifest: &ModelManifest) -> Result<(), ModelMan
                 source.url
             )));
         }
+    }
+    if manifest.package.sources.len() != 2
+        || !matches!(manifest.package.sources[0].kind, SourceKind::Cdn)
+        || !matches!(manifest.package.sources[1].kind, SourceKind::GithubRelease)
+    {
+        return Err(ModelManagerError::InvalidManifest(
+            "下载源必须按 CDN → GitHub Releases 的顺序提供双源".into(),
+        ));
     }
     if manifest.license.spdx_id.trim().is_empty()
         || manifest.license.name.trim().is_empty()

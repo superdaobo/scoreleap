@@ -3,12 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useTranscriptionStore } from '../stores/transcriptionStore'
+import { useModelStore } from '../stores/modelStore'
 import { getAudioFileInfo, pickAudioFile, pickMidiFile } from '../services/api'
 import { formatDuration } from '../utils/format'
 
 const router = useRouter()
 const store = useLibraryStore()
 const txStore = useTranscriptionStore()
+const modelStore = useModelStore()
 const importing = ref(false)
 const dragging = ref(false)
 
@@ -19,6 +21,8 @@ onMounted(() => {
   void store.loadDocuments()
   void txStore.subscribe()
   void txStore.restore()
+  void modelStore.subscribe()
+  void modelStore.load()
 })
 
 async function chooseFile(): Promise<void> {
@@ -36,7 +40,7 @@ async function chooseFile(): Promise<void> {
   }
 }
 
-/** 从音频转录：选择 MP3 → 确认界面（文件名/大小/说明）→ 启动 */
+/** 从音频转录：选择受支持格式 → 确认界面 → 启动。音频始终只传本地路径。 */
 async function chooseAudio(): Promise<void> {
   if (txStore.starting || txStore.running) return
   try {
@@ -53,6 +57,11 @@ async function chooseAudio(): Promise<void> {
 async function confirmStart(): Promise<void> {
   const p = txStore.pendingConfirm
   if (!p) return
+  if (!modelStore.ready) {
+    txStore.error = '首次转录前需要在设置中确认并下载模型'
+    await router.push({ name: 'settings' })
+    return
+  }
   await txStore.start(p.path)
   await store.loadDocuments()
 }
@@ -105,6 +114,22 @@ function onDrop(e: DragEvent): void {
       >
         ✕
       </button>
+    </div>
+
+    <div
+      v-if="!modelStore.ready && modelStore.model.status !== 'unknown'"
+      class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3"
+      role="status"
+    >
+      <div>
+        <p class="text-sm font-medium text-amber-200">首次音频转录需要按需下载模型</p>
+        <p class="mt-1 text-xs text-amber-100/70">下载前会显示版本、大小和来源并等待你确认；音频不会上传。</p>
+      </div>
+      <button
+        type="button"
+        class="rounded-lg border border-amber-400/40 px-3 py-2 text-sm text-amber-200 hover:bg-amber-500/10"
+        @click="router.push({ name: 'settings' })"
+      >前往设置</button>
     </div>
 
     <!-- 转录进度卡片 -->
@@ -205,7 +230,7 @@ function onDrop(e: DragEvent): void {
           🎧 从音频转录（实验）
         </button>
         <p class="mt-3 max-w-md text-xs text-slate-500">
-          选择 MP3，自动识别音符并生成可演奏的 MIDI 曲谱。转录在本地完成，不上传任何数据。
+          选择 MP3、WAV 或 FLAC，自动识别音符并生成 MIDI。音频始终在本地处理。
         </p>
       </div>
     </div>
@@ -287,7 +312,8 @@ function onDrop(e: DragEvent): void {
         <li>• 音频仅在本地处理，不会上传或联网。</li>
         <li>• 预计耗时：首次约 30–60 秒（含模型加载），之后约 10 秒。</li>
         <li>• 钢琴独奏或旋律清晰的音频效果最佳；完整歌曲可能出现杂音符。</li>
-        <li>• 支持 MP3（≤200MB，≤10 分钟）。</li>
+        <li>• 支持 MP3/WAV/FLAC（≤200MB，≤10 分钟）。</li>
+        <li>• 当前预设：{{ txStore.preset === 'balanced' ? '均衡' : txStore.preset === 'detail' ? '细节' : '降噪' }}（可在设置中调整）。</li>
       </ul>
       <div class="mt-6 flex justify-end gap-3">
         <button
@@ -300,10 +326,10 @@ function onDrop(e: DragEvent): void {
         <button
           type="button"
           class="rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-          :disabled="txStore.starting"
+          :disabled="txStore.starting || !modelStore.ready"
           @click="confirmStart"
         >
-          {{ txStore.starting ? '启动中…' : '开始转录' }}
+          {{ !modelStore.ready ? '请先下载模型' : txStore.starting ? '启动中…' : '开始转录' }}
         </button>
       </div>
     </div>

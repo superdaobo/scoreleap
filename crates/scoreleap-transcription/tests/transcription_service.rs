@@ -1,4 +1,4 @@
-//! 转录服务集成测试：PowerShell Fake Worker（不依赖 Python/basic-pitch）。
+//! 转录服务集成测试：PowerShell Fake Worker（不依赖真实模型/ONNX Runtime）。
 //! Fake Worker 行为由输入文件名关键字控制：slow=延迟、bad=写垃圾 MIDI、fail=退出 9。
 
 use std::path::PathBuf;
@@ -15,18 +15,21 @@ param($command)
 function Emit($obj) { Write-Output ($obj | ConvertTo-Json -Compress -Depth 4) }
 $inputPath = $args[[Array]::IndexOf($args, '--input') + 1]
 $midiPath = $args[[Array]::IndexOf($args, '--output-midi') + 1]
-Emit @{schema_version=1; type='ready'; request_id='r'; worker_version='0.1.0-test'}
-Emit @{schema_version=1; type='stage'; request_id='r'; stage='validating_input'; message='v'}
-Emit @{schema_version=1; type='stage'; request_id='r'; stage='loading_model'; message='m'}
+$metadataPath = $args[[Array]::IndexOf($args, '--output-metadata') + 1]
+$requestId = $args[[Array]::IndexOf($args, '--request-id') + 1]
+Emit @{schema_version=1; type='ready'; request_id=$requestId; worker_version='0.1.0-test'}
+Emit @{schema_version=1; type='stage'; request_id=$requestId; stage='validating_input'; message='v'}
+Emit @{schema_version=1; type='stage'; request_id=$requestId; stage='loading_model'; message='m'}
 if ($inputPath -like '*slow*') { Start-Sleep -Seconds 6 }
-Emit @{schema_version=1; type='stage'; request_id='r'; stage='transcribing'; message='t'}
-Emit @{schema_version=1; type='result'; request_id='r'; note_count=3; elapsed_ms=100}
+Emit @{schema_version=1; type='stage'; request_id=$requestId; stage='transcribing'; message='t'}
 if ($inputPath -like '*fail*') { exit 9 }
 if ($inputPath -like '*bad*') {
     [System.IO.File]::WriteAllBytes($midiPath, [byte[]](0xDE,0xAD,0xBE,0xEF))
 } else {
     [System.IO.File]::WriteAllBytes($midiPath, [byte[]]@(0x4D,0x54,0x68,0x64,0x00,0x00,0x00,0x06,0x00,0x00,0x00,0x01,0x00,0x60,0x4D,0x54,0x72,0x6B,0x00,0x00,0x00,0x0B,0x00,0x90,0x3C,0x64,0x60,0x80,0x3C,0x00,0x00,0xFF,0x2F,0x00))
 }
+[System.IO.File]::WriteAllText($metadataPath, '{}')
+Emit @{schema_version=1; type='result'; request_id=$requestId; midi_path=$midiPath; metadata_path=$metadataPath; note_count=3; elapsed_ms=100}
 exit 0
 "#;
 
@@ -42,6 +45,8 @@ fn setup(worker_ps1: &str) -> Harness {
     std::fs::create_dir_all(&tmp).unwrap();
     let worker_file = tmp.join("fake_worker.ps1");
     std::fs::write(&worker_file, worker_ps1).unwrap();
+    let model_file = tmp.join("model.onnx");
+    std::fs::write(&model_file, b"fake onnx model").unwrap();
     let events = Arc::new(Mutex::new(Vec::new()));
     let imports = Arc::new(Mutex::new(Vec::new()));
     let ev = events.clone();
@@ -57,6 +62,8 @@ fn setup(worker_ps1: &str) -> Harness {
                 "-File".into(),
                 worker_file.to_string_lossy().to_string(),
             ],
+            model_path: model_file,
+            onnx_runtime_path: None,
         },
         Arc::new(move |e| ev.lock().unwrap().push(e)),
         Arc::new(move |midi, name| {
@@ -154,9 +161,37 @@ fn invalid_input_rejected() {
     let e = h.service.start(r"C:\no\such\file.mp3").unwrap_err();
     assert_eq!(e.code, TranscriptionErrorCode::InvalidAudioPath);
     // 扩展名
-    let wav = make_input(&h.data_dir, "a.wav");
-    let e = h.service.start(&wav).unwrap_err();
+    let ogg = make_input(&h.data_dir, "a.ogg");
+    let e = h.service.start(&ogg).unwrap_err();
     assert_eq!(e.code, TranscriptionErrorCode::UnsupportedAudioFormat);
+    std::fs::remove_dir_all(&h.data_dir).ok();
+}
+
+#[test]
+fn wav_and_flac_extensions_are_accepted() {
+    for extension in ["wav", "flac"] {
+        let h = setup(FAKE_WORKER_PS1);
+        let input = make_input(&h.data_dir, &format!("input.{extension}"));
+        h.service.start(&input).unwrap();
+        assert_eq!(wait_terminal(&h.service, 20), Some(JobStatus::Completed));
+        std::fs::remove_dir_all(&h.data_dir).ok();
+    }
+}
+
+#[test]
+fn zero_exit_without_result_is_protocol_failure() {
+    let worker = FAKE_WORKER_PS1.replace(
+        "Emit @{schema_version=1; type='result'; request_id=$requestId; midi_path=$midiPath; metadata_path=$metadataPath; note_count=3; elapsed_ms=100}",
+        "# result intentionally omitted",
+    );
+    let h = setup(&worker);
+    let input = make_input(&h.data_dir, "missing-result.mp3");
+    h.service.start(&input).unwrap();
+    assert_eq!(wait_terminal(&h.service, 20), Some(JobStatus::Failed));
+    assert_eq!(
+        h.service.status().unwrap().error_code.as_deref(),
+        Some("WORKER_PROTOCOL_ERROR")
+    );
     std::fs::remove_dir_all(&h.data_dir).ok();
 }
 
