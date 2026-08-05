@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use scoreleap_transcription::{
-    JobStatus, TranscriptionErrorCode, TranscriptionEvent, TranscriptionService, WorkerSpec,
+    JobStatus, TranscriptionErrorCode, TranscriptionEvent, TranscriptionOptions,
+    TranscriptionPreset, TranscriptionService, WorkerSpec,
 };
 
 const FAKE_WORKER_PS1: &str = r#"
@@ -17,6 +18,16 @@ $inputPath = $args[[Array]::IndexOf($args, '--input') + 1]
 $midiPath = $args[[Array]::IndexOf($args, '--output-midi') + 1]
 $metadataPath = $args[[Array]::IndexOf($args, '--output-metadata') + 1]
 $requestId = $args[[Array]::IndexOf($args, '--request-id') + 1]
+if ($inputPath -like '*options*') {
+    $preset = $args[[Array]::IndexOf($args, '--preset') + 1]
+    $onset = $args[[Array]::IndexOf($args, '--onset-threshold') + 1]
+    $frame = $args[[Array]::IndexOf($args, '--frame-threshold') + 1]
+    $minimum = $args[[Array]::IndexOf($args, '--minimum-note-length-ms') + 1]
+    if ($preset -ne 'piano_noise_reduced' -or $onset -ne '0.7' -or $frame -ne '0.55' -or $minimum -ne '90') {
+        Emit @{schema_version=1; type='error'; request_id=$requestId; code='WORKER_PROTOCOL_ERROR'; detail='native CLI contract mismatch'}
+        exit 2
+    }
+}
 Emit @{schema_version=1; type='ready'; request_id=$requestId; worker_version='0.1.0-test'}
 Emit @{schema_version=1; type='stage'; request_id=$requestId; stage='validating_input'; message='v'}
 Emit @{schema_version=1; type='stage'; request_id=$requestId; stage='loading_model'; message='m'}
@@ -168,6 +179,37 @@ fn invalid_input_rejected() {
 }
 
 #[test]
+fn concurrent_starts_publish_exactly_one_job() {
+    let h = setup(FAKE_WORKER_PS1);
+    let input = make_input(&h.data_dir, "slow-concurrent.mp3");
+    let barrier = Arc::new(std::sync::Barrier::new(8));
+    let mut threads = Vec::new();
+    for _ in 0..8 {
+        let service = h.service.clone();
+        let input = input.clone();
+        let barrier = barrier.clone();
+        threads.push(std::thread::spawn(move || {
+            barrier.wait();
+            service.start(&input)
+        }));
+    }
+    let results: Vec<_> = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .collect();
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert!(results
+        .iter()
+        .filter(|result| result.is_err())
+        .all(|result| {
+            result.as_ref().unwrap_err().code == TranscriptionErrorCode::TranscriptionBusy
+        }));
+    h.service.cancel().unwrap();
+    assert_eq!(wait_terminal(&h.service, 10), Some(JobStatus::Cancelled));
+    std::fs::remove_dir_all(&h.data_dir).ok();
+}
+
+#[test]
 fn wav_and_flac_extensions_are_accepted() {
     for extension in ["wav", "flac"] {
         let h = setup(FAKE_WORKER_PS1);
@@ -176,6 +218,25 @@ fn wav_and_flac_extensions_are_accepted() {
         assert_eq!(wait_terminal(&h.service, 20), Some(JobStatus::Completed));
         std::fs::remove_dir_all(&h.data_dir).ok();
     }
+}
+
+#[test]
+fn native_cli_preset_and_threshold_flags_match_runtime_contract() {
+    let h = setup(FAKE_WORKER_PS1);
+    let input = make_input(&h.data_dir, "options.flac");
+    h.service
+        .start_with_options(
+            &input,
+            TranscriptionOptions {
+                preset: TranscriptionPreset::NoiseReduced,
+                onset_threshold: Some(0.7),
+                frame_threshold: Some(0.55),
+                minimum_note_ms: Some(90),
+            },
+        )
+        .unwrap();
+    assert_eq!(wait_terminal(&h.service, 20), Some(JobStatus::Completed));
+    std::fs::remove_dir_all(&h.data_dir).ok();
 }
 
 #[test]

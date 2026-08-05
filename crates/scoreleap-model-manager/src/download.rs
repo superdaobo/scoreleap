@@ -83,14 +83,34 @@ impl HttpSourceDownloader {
         config: HttpDownloadConfig,
         observer: Option<ProgressObserver>,
     ) -> Result<Self, ModelManagerError> {
+        Self::build(config, observer, false)
+    }
+
+    fn build(
+        config: HttpDownloadConfig,
+        observer: Option<ProgressObserver>,
+        allow_http_for_tests: bool,
+    ) -> Result<Self, ModelManagerError> {
         if config.max_response_bytes == 0 {
             return Err(ModelManagerError::InvalidDownloadConfiguration(
                 "max_response_bytes 必须大于零".into(),
             ));
         }
+        let redirect = reqwest::redirect::Policy::custom(move |attempt| {
+            if attempt.previous().len() >= 10 {
+                return attempt.error(std::io::Error::other("重定向次数超过上限"));
+            }
+            if url_is_allowed(attempt.url(), allow_http_for_tests) {
+                attempt.follow()
+            } else {
+                attempt.error(std::io::Error::other("重定向目标不符合 HTTPS 安全策略"))
+            }
+        });
         let client = reqwest::blocking::Client::builder()
             .connect_timeout(config.connect_timeout)
             .timeout(config.read_timeout)
+            .https_only(!allow_http_for_tests)
+            .redirect(redirect)
             .user_agent(config.user_agent.as_str())
             .build()
             .map_err(|error| ModelManagerError::InvalidDownloadConfiguration(error.to_string()))?;
@@ -98,15 +118,13 @@ impl HttpSourceDownloader {
             client,
             config,
             observer,
-            allow_http_for_tests: false,
+            allow_http_for_tests,
         })
     }
 
     #[cfg(test)]
     fn new_for_local_test(config: HttpDownloadConfig) -> Result<Self, ModelManagerError> {
-        let mut client = Self::new(config, None)?;
-        client.allow_http_for_tests = true;
-        Ok(client)
+        Self::build(config, None, true)
     }
 
     fn emit(&self, source: &ModelSource, phase: DownloadPhase, received: u64, total: Option<u64>) {
@@ -127,11 +145,23 @@ impl HttpSourceDownloader {
         if !scheme_allowed {
             return Err("下载地址必须使用 HTTPS".into());
         }
+        if !url.host_str().is_some_and(|host| !host.is_empty()) {
+            return Err("下载地址缺少有效主机名".into());
+        }
         if !url.username().is_empty() || url.password().is_some() {
             return Err("下载地址禁止包含鉴权信息".into());
         }
         Ok(url)
     }
+}
+
+fn url_is_allowed(url: &reqwest::Url, allow_http_for_tests: bool) -> bool {
+    let scheme_allowed =
+        url.scheme() == "https" || (allow_http_for_tests && url.scheme() == "http");
+    scheme_allowed
+        && url.host_str().is_some_and(|host| !host.is_empty())
+        && url.username().is_empty()
+        && url.password().is_none()
 }
 
 impl SourceDownloader for HttpSourceDownloader {
@@ -271,9 +301,14 @@ impl DownloadPlan {
             attempt.state = AttemptState::Downloading;
             let result = (|| -> Result<(), ModelManagerError> {
                 let mut destination = File::create(part_path)?;
-                downloader
-                    .download(&attempt.source, &mut destination, cancellation)
-                    .map_err(|message| ModelManagerError::Io(std::io::Error::other(message)))?;
+                if let Err(message) =
+                    downloader.download(&attempt.source, &mut destination, cancellation)
+                {
+                    if cancellation.is_cancelled() {
+                        return Err(ModelManagerError::Cancelled);
+                    }
+                    return Err(ModelManagerError::Io(std::io::Error::other(message)));
+                }
                 destination.flush()?;
                 destination.sync_all()?;
                 if cancellation.is_cancelled() {
@@ -385,6 +420,82 @@ mod http_tests {
             .unwrap_err();
         assert!(error.contains("鉴权"));
         assert!(!error.contains("secret"));
+    }
+
+    #[test]
+    fn redirect_targets_are_checked_before_following() {
+        assert!(url_is_allowed(
+            &reqwest::Url::parse("https://cdn.example/model.zip").unwrap(),
+            false
+        ));
+        assert!(!url_is_allowed(
+            &reqwest::Url::parse("http://cdn.example/model.zip").unwrap(),
+            false
+        ));
+        assert!(!url_is_allowed(
+            &reqwest::Url::parse("https://user:secret@cdn.example/model.zip").unwrap(),
+            false
+        ));
+    }
+
+    #[test]
+    fn http_downloader_observes_cancellation_after_progress() {
+        let cancellation = CancellationToken::default();
+        let cancel_from_observer = cancellation.clone();
+        let mut downloader = HttpSourceDownloader::new_for_local_test(HttpDownloadConfig {
+            max_response_bytes: 1024,
+            ..HttpDownloadConfig::default()
+        })
+        .unwrap();
+        downloader.observer = Some(Arc::new(move |event| {
+            if event.received_bytes > 0 {
+                cancel_from_observer.cancel();
+            }
+        }));
+        let source = ModelSource {
+            kind: SourceKind::Cdn,
+            url: mock_server(b"model-package"),
+        };
+        let error = downloader
+            .download(&source, &mut Vec::new(), &cancellation)
+            .unwrap_err();
+        assert_eq!(error, "cancelled");
+    }
+
+    #[test]
+    fn download_plan_preserves_transport_cancellation_semantics() {
+        struct CancellingDownloader;
+        impl SourceDownloader for CancellingDownloader {
+            fn download(
+                &self,
+                _source: &ModelSource,
+                _destination: &mut dyn Write,
+                cancellation: &CancellationToken,
+            ) -> Result<(), String> {
+                cancellation.cancel();
+                Err("cancelled".into())
+            }
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        let part_path = directory.path().join("model.zip.part");
+        let source = ModelSource {
+            kind: SourceKind::Cdn,
+            url: "https://cdn.example/model.zip".into(),
+        };
+        let package = PackageDescriptor {
+            size_bytes: 1,
+            sha256: "0".repeat(64),
+            sources: vec![source.clone()],
+        };
+        let cancellation = CancellationToken::default();
+        let mut plan = DownloadPlan::new(&[source]);
+        let error = plan
+            .execute(&CancellingDownloader, &part_path, &package, &cancellation)
+            .unwrap_err();
+        assert!(matches!(error, ModelManagerError::Cancelled));
+        assert_eq!(plan.status, DownloadStatus::Cancelled);
+        assert!(!part_path.exists());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useTranscriptionStore } from '../stores/transcriptionStore'
@@ -15,6 +15,14 @@ const importing = ref(false)
 const dragging = ref(false)
 
 const hasDocuments = computed(() => store.documents.length > 0)
+
+// 转录命令只负责启动异步任务；真正完成导入后再刷新曲谱库。
+watch(
+  () => txStore.job?.status,
+  (status, previous) => {
+    if (status === 'Completed' && previous !== 'Completed') void store.loadDocuments()
+  },
+)
 
 // 进入页面时从后端持久化曲谱库加载，并订阅转录事件
 onMounted(() => {
@@ -63,7 +71,6 @@ async function confirmStart(): Promise<void> {
     return
   }
   await txStore.start(p.path)
-  await store.loadDocuments()
 }
 
 /** 完成态：跳转曲谱详情 */

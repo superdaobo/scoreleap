@@ -240,7 +240,7 @@ async function confirmReAgree(): Promise<void> {
           <input id="frame-threshold" v-model.number="transcription.frameThreshold" type="range" min="0" max="1" step="0.01" class="mt-2 w-full accent-indigo-500" :disabled="!transcription.advancedEnabled" />
         </label>
         <label class="text-xs text-slate-400" for="minimum-note-ms">最短音符（毫秒）
-          <input id="minimum-note-ms" v-model.number="transcription.minimumNoteMs" type="number" min="10" max="5000" class="mt-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200" :disabled="!transcription.advancedEnabled" />
+          <input id="minimum-note-ms" v-model.number="transcription.minimumNoteMs" type="number" min="20" max="2000" step="1" class="mt-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200" :disabled="!transcription.advancedEnabled" />
         </label>
       </div>
     </section>

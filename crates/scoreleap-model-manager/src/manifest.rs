@@ -206,6 +206,7 @@ pub(crate) fn validate_manifest(manifest: &ModelManifest) -> Result<(), ModelMan
     }
     validate_component(&manifest.model_id, "model_id")?;
     validate_component(&manifest.version, "version")?;
+    parse_version(&manifest.version)?;
     validate_component(&manifest.engine_compat.engine_id, "engine_id")?;
     parse_version(&manifest.engine_compat.min_version)?;
     if let Some(maximum) = &manifest.engine_compat.max_version {
@@ -320,10 +321,7 @@ fn parse_version(value: &str) -> Result<Vec<u64>, ModelManagerError> {
         .collect()
 }
 
-pub(crate) fn compare_version(
-    left: &str,
-    right: &str,
-) -> Result<std::cmp::Ordering, ModelManagerError> {
+pub fn compare_version(left: &str, right: &str) -> Result<std::cmp::Ordering, ModelManagerError> {
     let mut left = parse_version(left)?;
     let mut right = parse_version(right)?;
     let length = left.len().max(right.len());

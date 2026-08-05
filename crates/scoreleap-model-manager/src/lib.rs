@@ -14,7 +14,7 @@ pub use download::{
 pub use error::ModelManagerError;
 pub use manager::{ExtractionLimits, InstallOutcome, InstallReport, ModelManager, ModelVersionRef};
 pub use manifest::{
-    catalog_signing_bytes, manifest_signing_bytes, sha256_reader, verify_file,
+    catalog_signing_bytes, compare_version, manifest_signing_bytes, sha256_reader, verify_file,
     verify_signed_catalog, verify_signed_manifest, ArtifactDescriptor, EngineCompatibility,
     LicenseDescriptor, ModelCatalog, ModelManifest, ModelSource, PackageDescriptor,
     SignatureEnvelope, SignedModelCatalog, SignedModelManifest, SourceKind,

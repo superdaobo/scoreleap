@@ -26,6 +26,7 @@ export const useModelStore = defineStore('transcription-model', () => {
   const model = ref<ModelStatusView>({ ...EMPTY_STATUS })
   const busy = ref(false)
   const unlisteners = ref<UnlistenFn[]>([])
+  let subscribePromise: Promise<void> | null = null
 
   const ready = computed(
     () => model.value.status === 'ready' || model.value.status === 'update_available',
@@ -90,17 +91,34 @@ export const useModelStore = defineStore('transcription-model', () => {
 
   async function subscribe(): Promise<void> {
     if (unlisteners.value.length > 0) return
-    unlisteners.value.push(
-      await subscribeModelProgress((progress) => {
-        model.value.status = 'downloading'
-        model.value.received_bytes = progress.received_bytes
-        model.value.total_bytes = progress.total_bytes ?? model.value.total_bytes
-        model.value.source = progress.source
-      }),
-      await subscribeModelState((status) => {
-        model.value = status
-      }),
-    )
+    if (subscribePromise) return subscribePromise
+    subscribePromise = (async () => {
+      const acquired: UnlistenFn[] = []
+      try {
+        acquired.push(
+          await subscribeModelProgress((progress) => {
+            model.value.status = 'downloading'
+            model.value.received_bytes = progress.received_bytes
+            model.value.total_bytes = progress.total_bytes ?? model.value.total_bytes
+            model.value.source = progress.source
+          }),
+        )
+        acquired.push(
+          await subscribeModelState((status) => {
+            model.value = status
+          }),
+        )
+        unlisteners.value.push(...acquired)
+      } catch (error) {
+        for (const unlisten of acquired) unlisten()
+        throw error
+      }
+    })()
+    try {
+      await subscribePromise
+    } finally {
+      subscribePromise = null
+    }
   }
 
   function unsubscribe(): void {

@@ -34,9 +34,10 @@ pub enum TranscriptionPreset {
 impl TranscriptionPreset {
     fn as_str(self) -> &'static str {
         match self {
-            Self::Balanced => "balanced",
-            Self::Detail => "detail",
-            Self::NoiseReduced => "noise_reduced",
+            // UI 使用简短稳定值，启动 sidecar 时转换为原生运行时的钢琴预设契约。
+            Self::Balanced => "piano_balanced",
+            Self::Detail => "piano_detail",
+            Self::NoiseReduced => "piano_noise_reduced",
         }
     }
 }
@@ -65,11 +66,11 @@ impl TranscriptionOptions {
         }
         if self
             .minimum_note_ms
-            .is_some_and(|value| !(10..=5000).contains(&value))
+            .is_some_and(|value| !(20..=2000).contains(&value))
         {
             return Err(TranscriptionError::new(
                 TranscriptionErrorCode::WorkerProtocolError,
-                "minimum_note_ms 必须在 10..=5000 范围内",
+                "minimum_note_ms 必须在 20..=2000 范围内",
             ));
         }
         Ok(())
@@ -119,6 +120,8 @@ struct ActiveJob {
 #[derive(Clone)]
 pub struct TranscriptionService {
     inner: Arc<Mutex<Option<ActiveJob>>>,
+    /// 串行化“检查空闲 → 启动进程 → 发布任务”，防止两个命令同时穿透单任务限制。
+    start_lock: Arc<Mutex<()>>,
     worker: WorkerSpec,
     data_dir: PathBuf,
     on_event: EventFn,
@@ -140,6 +143,7 @@ impl TranscriptionService {
     ) -> Self {
         Self {
             inner: Arc::new(Mutex::new(None)),
+            start_lock: Arc::new(Mutex::new(())),
             worker,
             data_dir,
             on_event,
@@ -208,6 +212,10 @@ impl TranscriptionService {
         input_path: &str,
         options: TranscriptionOptions,
     ) -> Result<String, TranscriptionError> {
+        let _start_guard = self
+            .start_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         {
             let guard = self.inner.lock().unwrap();
             if let Some(a) = guard.as_ref() {
@@ -297,7 +305,7 @@ impl TranscriptionService {
             cmd.arg("--frame-threshold").arg(value.to_string());
         }
         if let Some(value) = options.minimum_note_ms {
-            cmd.arg("--minimum-note-ms").arg(value.to_string());
+            cmd.arg("--minimum-note-length-ms").arg(value.to_string());
         }
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = match cmd.spawn() {
@@ -365,13 +373,15 @@ impl TranscriptionService {
                     }
                     match WorkerMsg::parse_line(line) {
                         Ok(msg) => handle_worker_msg(
-                            &inner,
-                            &on_event,
-                            &last_code,
-                            &last_msg,
-                            &saw_result,
-                            &jid,
-                            &expected_request_id,
+                            &WorkerMessageContext {
+                                inner: &inner,
+                                on_event: &on_event,
+                                last_code: &last_code,
+                                last_msg: &last_msg,
+                                saw_result: &saw_result,
+                                job_id: &jid,
+                                expected_request_id: &expected_request_id,
+                            },
                             msg,
                         ),
                         Err(_) => {
@@ -697,28 +707,31 @@ fn finish_job(
     });
 }
 
-fn handle_worker_msg(
-    inner: &Mutex<Option<ActiveJob>>,
-    on_event: &EventFn,
-    last_code: &Mutex<Option<String>>,
-    last_msg: &Mutex<Option<String>>,
-    saw_result: &AtomicBool,
-    job_id: &str,
-    expected_request_id: &str,
-    msg: WorkerMsg,
-) {
-    if msg.schema_version != Some(1) || msg.request_id.as_deref() != Some(expected_request_id) {
-        *last_code.lock().unwrap() =
+struct WorkerMessageContext<'a> {
+    inner: &'a Mutex<Option<ActiveJob>>,
+    on_event: &'a EventFn,
+    last_code: &'a Mutex<Option<String>>,
+    last_msg: &'a Mutex<Option<String>>,
+    saw_result: &'a AtomicBool,
+    job_id: &'a str,
+    expected_request_id: &'a str,
+}
+
+fn handle_worker_msg(context: &WorkerMessageContext<'_>, msg: WorkerMsg) {
+    if msg.schema_version != Some(1)
+        || msg.request_id.as_deref() != Some(context.expected_request_id)
+    {
+        *context.last_code.lock().unwrap() =
             Some(TranscriptionErrorCode::WorkerProtocolError.as_str().into());
-        *last_msg.lock().unwrap() = Some("Worker schema_version 或 request_id 无效".into());
+        *context.last_msg.lock().unwrap() = Some("Worker schema_version 或 request_id 无效".into());
         return;
     }
     match msg.msg_type.as_str() {
         "ready" => {
             if let Some(v) = msg.worker_version {
-                let mut guard = inner.lock().unwrap();
+                let mut guard = context.inner.lock().unwrap();
                 if let Some(a) = guard.as_mut() {
-                    if a.job.job_id == job_id {
+                    if a.job.job_id == context.job_id {
                         a.job.message = format!("Worker {v} 就绪");
                     }
                 }
@@ -735,56 +748,61 @@ fn handle_worker_msg(
                 _ => JobStatus::Starting,
             };
             {
-                let mut guard = inner.lock().unwrap();
+                let mut guard = context.inner.lock().unwrap();
                 if let Some(a) = guard.as_mut() {
-                    if a.job.job_id == job_id {
+                    if a.job.job_id == context.job_id {
                         a.job.status = status;
                         a.job.stage = stage.clone();
                         a.job.message = message.clone();
                     }
                 }
             }
-            on_event(TranscriptionEvent::Stage {
-                job_id: job_id.into(),
+            (context.on_event)(TranscriptionEvent::Stage {
+                job_id: context.job_id.into(),
                 stage,
                 message,
             });
         }
         "result" => {
-            let mut guard = inner.lock().unwrap();
+            let mut guard = context.inner.lock().unwrap();
             if let Some(a) = guard.as_mut() {
-                if a.job.job_id == job_id {
+                if a.job.job_id == context.job_id {
                     let paths_match = msg.midi_path.as_deref() == a.job.midi_path.as_deref()
                         && msg.metadata_path.as_deref() == a.job.metadata_path.as_deref();
                     if !paths_match || msg.elapsed_ms.is_none() || msg.note_count.is_none() {
-                        *last_code.lock().unwrap() =
+                        *context.last_code.lock().unwrap() =
                             Some(TranscriptionErrorCode::WorkerProtocolError.as_str().into());
-                        *last_msg.lock().unwrap() =
+                        *context.last_msg.lock().unwrap() =
                             Some("Worker result 字段缺失或输出路径不匹配".into());
                         return;
                     }
                     a.job.note_count = msg.note_count;
                     a.job.elapsed_ms = msg.elapsed_ms.unwrap_or(0);
-                    saw_result.store(true, Ordering::Release);
+                    context.saw_result.store(true, Ordering::Release);
                 }
             }
         }
         "error" => {
-            *last_code.lock().unwrap() = Some(
+            *context.last_code.lock().unwrap() = Some(
                 msg.code
                     .clone()
                     .filter(|value| !value.trim().is_empty())
                     .unwrap_or_else(|| TranscriptionErrorCode::WorkerProtocolError.as_str().into()),
             );
-            *last_msg.lock().unwrap() = msg
+            *context.last_msg.lock().unwrap() = msg
                 .message
                 .clone()
                 .or(msg.detail.clone())
                 .or_else(|| Some("Worker 返回了未说明的错误".into()));
-            tracing::warn!(job_id, "worker-error: {:?} {:?}", msg.code, msg.message);
+            tracing::warn!(
+                job_id = context.job_id,
+                "worker-error: {:?} {:?}",
+                msg.code,
+                msg.message
+            );
         }
         other => {
-            tracing::debug!(job_id, "忽略未知 Worker 消息类型: {other}");
+            tracing::debug!(job_id = context.job_id, "忽略未知 Worker 消息类型: {other}");
         }
     }
 }

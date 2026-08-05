@@ -75,7 +75,7 @@ describe('transcriptionStore', () => {
   it('stage 事件更新阶段与状态（不确定进度）', async () => {
     vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
     const store = useTranscriptionStore()
-    store.job = SAMPLE_JOB
+    store.job = { ...SAMPLE_JOB }
     await store.subscribe()
     emit('transcription://stage', {
       job_id: 'job-1',
@@ -91,7 +91,7 @@ describe('transcriptionStore', () => {
   it('completed 事件标记完成并记录结果', async () => {
     vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
     const store = useTranscriptionStore()
-    store.job = SAMPLE_JOB
+    store.job = { ...SAMPLE_JOB }
     await store.subscribe()
     emit('transcription://completed', {
       job_id: 'job-1',
@@ -109,7 +109,7 @@ describe('transcriptionStore', () => {
   it('error 事件标记失败并记录错误码', async () => {
     vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
     const store = useTranscriptionStore()
-    store.job = SAMPLE_JOB
+    store.job = { ...SAMPLE_JOB }
     await store.subscribe()
     emit('transcription://error', {
       job_id: 'job-1',
@@ -124,7 +124,7 @@ describe('transcriptionStore', () => {
   it('cancel 调用命令并标记取消', async () => {
     vi.mocked(api.cancelAudioTranscription).mockResolvedValue(undefined)
     const store = useTranscriptionStore()
-    store.job = SAMPLE_JOB
+    store.job = { ...SAMPLE_JOB }
     await store.cancel()
     expect(api.cancelAudioTranscription).toHaveBeenCalled()
     expect(store.job?.status).toBe('Cancelled')
@@ -165,6 +165,27 @@ describe('transcriptionStore', () => {
     expect(store.errorLabel(null, '回退文案')).toBe('回退文案')
   })
 
+  it('忽略其他任务的迟到 completed/error 事件', async () => {
+    const store = useTranscriptionStore()
+    store.job = { ...SAMPLE_JOB }
+    await store.subscribe()
+    emit('transcription://completed', {
+      job_id: 'job-old',
+      doc_id: 'doc-old',
+      midi_path: 'C:/old.mid',
+      note_count: 999,
+      elapsed_ms: 1,
+    })
+    emit('transcription://error', {
+      job_id: 'job-old',
+      code: 'INTERNAL_ERROR',
+      message: '旧任务错误',
+    })
+    expect(store.job?.status).toBe('Starting')
+    expect(store.job?.result_doc_id).toBeNull()
+    expect(store.job?.error_code).toBeNull()
+  })
+
   it('高级阈值启用后随预设传给原生 sidecar 命令', async () => {
     vi.mocked(api.startAudioTranscription).mockResolvedValue('job-1')
     vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
@@ -181,5 +202,14 @@ describe('transcriptionStore', () => {
       frame_threshold: 0.55,
       minimum_note_ms: 90,
     })
+  })
+
+  it('拒绝超出原生运行时契约的高级参数', async () => {
+    const store = useTranscriptionStore()
+    store.advancedEnabled = true
+    store.minimumNoteMs = 10
+    await expect(store.start('C:/invalid.mp3')).rejects.toThrow('20 到 2000')
+    expect(api.startAudioTranscription).not.toHaveBeenCalled()
+    expect(store.error).toContain('20 到 2000')
   })
 })

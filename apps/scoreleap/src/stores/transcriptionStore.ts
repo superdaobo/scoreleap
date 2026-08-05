@@ -83,6 +83,7 @@ export const useTranscriptionStore = defineStore('transcription', () => {
   const pendingConfirm = ref<PendingConfirm | null>(null)
   /** 事件订阅句柄（测试注入用） */
   const unlisteners = ref<UnlistenFn[]>([])
+  let subscribePromise: Promise<void> | null = null
 
   const running = computed(
     () =>
@@ -102,39 +103,62 @@ export const useTranscriptionStore = defineStore('transcription', () => {
   /** 订阅转录事件（App 挂载时调用一次；测试可注入 setEventSubscribeImpl） */
   async function subscribe(): Promise<void> {
     if (unlisteners.value.length > 0) return
-    unlisteners.value.push(
-      await subscribeTranscriptionState((p) => {
-        if (!job.value || job.value.job_id === p.job_id) {
-          if (job.value) job.value.status = p.status as TranscriptionJobView['status']
-        }
-      }),
-      await subscribeTranscriptionStage((p) => {
-        if (!job.value || job.value.job_id === p.job_id) {
-          if (job.value) {
-            job.value.stage = p.stage
-            job.value.message = p.message
-            job.value.status = stageFromName(p.stage)
-          }
-        }
-      }),
-      await subscribeTranscriptionCompleted((p) => {
-        if (job.value) {
-          job.value.status = 'Completed'
-          job.value.result_doc_id = p.doc_id
-          job.value.note_count = p.note_count
-          job.value.elapsed_ms = p.elapsed_ms
-          job.value.message = '转录完成，已导入曲谱库'
-        }
-      }),
-      await subscribeTranscriptionError((p) => {
-        if (job.value) {
-          job.value.status = 'Failed'
-          job.value.error_code = p.code
-          job.value.error_message = p.message
-          job.value.message = p.message
-        }
-      }),
-    )
+    if (subscribePromise) return subscribePromise
+    subscribePromise = (async () => {
+      const acquired: UnlistenFn[] = []
+      try {
+        acquired.push(
+          await subscribeTranscriptionState((p) => {
+            if (!job.value || job.value.job_id === p.job_id) {
+              if (job.value) {
+                job.value.status = p.status as TranscriptionJobView['status']
+              }
+            }
+          }),
+        )
+        acquired.push(
+          await subscribeTranscriptionStage((p) => {
+            if (!job.value || job.value.job_id === p.job_id) {
+              if (job.value) {
+                job.value.stage = p.stage
+                job.value.message = p.message
+                job.value.status = stageFromName(p.stage)
+              }
+            }
+          }),
+        )
+        acquired.push(
+          await subscribeTranscriptionCompleted((p) => {
+            if (job.value?.job_id === p.job_id) {
+              job.value.status = 'Completed'
+              job.value.result_doc_id = p.doc_id
+              job.value.note_count = p.note_count
+              job.value.elapsed_ms = p.elapsed_ms
+              job.value.message = '转录完成，已导入曲谱库'
+            }
+          }),
+        )
+        acquired.push(
+          await subscribeTranscriptionError((p) => {
+            if (job.value?.job_id === p.job_id) {
+              job.value.status = 'Failed'
+              job.value.error_code = p.code
+              job.value.error_message = p.message
+              job.value.message = p.message
+            }
+          }),
+        )
+        unlisteners.value.push(...acquired)
+      } catch (error) {
+        for (const unlisten of acquired) unlisten()
+        throw error
+      }
+    })()
+    try {
+      await subscribePromise
+    } finally {
+      subscribePromise = null
+    }
   }
 
   /** 取消事件订阅（测试用/App 卸载） */
@@ -148,6 +172,7 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     error.value = null
     starting.value = true
     try {
+      if (advancedEnabled.value) validateAdvancedOptions()
       const jobId = await api.startAudioTranscription(path, {
         preset: preset.value,
         onset_threshold: advancedEnabled.value ? onsetThreshold.value : null,
@@ -232,6 +257,26 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     onsetThreshold,
     frameThreshold,
     minimumNoteMs,
+  }
+
+  function validateAdvancedOptions(): void {
+    if (
+      !Number.isFinite(onsetThreshold.value) ||
+      onsetThreshold.value < 0 ||
+      onsetThreshold.value > 1 ||
+      !Number.isFinite(frameThreshold.value) ||
+      frameThreshold.value < 0 ||
+      frameThreshold.value > 1
+    ) {
+      throw new Error('起音阈值和持续音阈值必须在 0 到 1 之间')
+    }
+    if (
+      !Number.isInteger(minimumNoteMs.value) ||
+      minimumNoteMs.value < 20 ||
+      minimumNoteMs.value > 2000
+    ) {
+      throw new Error('最短音符必须是 20 到 2000 之间的整数毫秒值')
+    }
   }
 })
 
