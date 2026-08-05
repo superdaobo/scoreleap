@@ -56,4 +56,11 @@ pub enum AudioError {
     ResamplerCreation { message: String },
     #[error("重采样失败：{message}")]
     Resample { message: String },
+    #[error("音频帧数计算溢出")]
+    FrameCountOverflow,
+    #[error("输出帧数超过安全上限：{actual_frames} > {max_frames}")]
+    OutputFrameLimitExceeded {
+        actual_frames: u128,
+        max_frames: usize,
+    },
 }
