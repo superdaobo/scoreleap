@@ -302,6 +302,26 @@ class CliAndManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "end_seconds"):
                 load_and_validate_manifest(path)
 
+    def test_manifest_allows_pending_reference_midi(self) -> None:
+        sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            audio = root / "audio.wav"
+            audio.write_bytes(b"RIFF-pending-audio")
+            path = root / "manifest.json"
+            path.write_text(json.dumps({
+                "schema_version": 1,
+                "samples": [{
+                    "id": "pending-ref", "source": "generated", "split": "hidden",
+                    "audio": {"path": audio.name, "sha256": sha(audio)},
+                    "reference_midi": None,
+                    "segment": {"start_seconds": 0, "end_seconds": 60},
+                    "noise": None,
+                }],
+            }), encoding="utf-8")
+            loaded = load_and_validate_manifest(path, verify_files=True)
+            self.assertIsNone(loaded["samples"][0]["reference_midi"])
+
 
 if __name__ == "__main__":
     unittest.main()

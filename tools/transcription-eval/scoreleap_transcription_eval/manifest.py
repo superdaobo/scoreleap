@@ -74,10 +74,13 @@ def load_and_validate_manifest(path: str | Path, verify_files: bool = False) -> 
             raise ValueError(f"样本 id 重复: {sample['id']}")
         identifiers.add(sample["id"])
         _validate_asset(sample.get("audio"), f"{location}.audio")
-        _validate_asset(sample.get("reference_midi"), f"{location}.reference_midi")
+        reference_midi = sample.get("reference_midi")
+        if reference_midi is not None:
+            _validate_asset(reference_midi, f"{location}.reference_midi")
         resolved_assets = {
             asset_name: resolve_asset_path(manifest_path, sample[asset_name]["path"])
             for asset_name in ("audio", "reference_midi")
+            if sample[asset_name] is not None
         }
 
         segment = _require_mapping(sample.get("segment"), f"{location}.segment")
@@ -101,6 +104,8 @@ def load_and_validate_manifest(path: str | Path, verify_files: bool = False) -> 
         if verify_files:
             for asset_name in ("audio", "reference_midi"):
                 asset = sample[asset_name]
+                if asset is None:
+                    continue
                 asset_path = resolved_assets[asset_name]
                 if not asset_path.is_file():
                     raise ValueError(f"文件不存在: {asset_path}")

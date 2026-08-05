@@ -64,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
             sample = next((item for item in manifest["samples"] if item["id"] == args.sample_id), None)
             if sample is None:
                 raise ValueError(f"manifest 中不存在样本: {args.sample_id}")
+            if sample["reference_midi"] is None:
+                raise ValueError(f"样本 {args.sample_id} 尚未提供人工参考 MIDI，无法评测")
             expected_reference = resolve_asset_path(args.manifest, sample["reference_midi"]["path"])
             if args.reference.resolve(strict=True) != expected_reference:
                 raise ValueError("reference MIDI 与 manifest 样本不一致")
