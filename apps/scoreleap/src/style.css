@@ -1,5 +1,113 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   ScoreLeap 设计系统 —— 基于 stitch_responsive_ui_style_cloner 规范
+   "High-Tech Minimalist"：深黑 + 金色主色 + 深绿次级 + 等宽技术标签
+   ========================================================================== */
+
+@theme {
+  /* --- 颜色（Material 系表面色 + 金色主色） --- */
+  --color-surface: #131313;
+  --color-surface-dim: #131313;
+  --color-surface-bright: #3a3939;
+  --color-surface-container-lowest: #0e0e0e;
+  --color-surface-container-low: #1c1b1b;
+  --color-surface-container: #201f1f;
+  --color-surface-container-high: #2a2a2a;
+  --color-surface-container-highest: #353534;
+  --color-on-surface: #e5e2e1;
+  --color-on-surface-variant: #d0c6ab;
+  --color-outline: #999077;
+  --color-outline-variant: #4d4732;
+  --color-surface-tint: #e9c400;
+
+  /* 主色：金色 */
+  --color-primary: #fff6df;
+  --color-on-primary: #3a3000;
+  --color-primary-container: #ffd700;
+  --color-on-primary-container: #705e00;
+  --color-primary-fixed: #ffe16d;
+  --color-primary-fixed-dim: #e9c400;
+  --color-on-primary-fixed: #221b00;
+  --color-on-primary-fixed-variant: #544600;
+
+  /* 次级：深绿 */
+  --color-secondary: #b4cdba;
+  --color-on-secondary: #203528;
+  --color-secondary-container: #364c3d;
+  --color-on-secondary-container: #a3bba9;
+  --color-secondary-fixed: #d0e9d5;
+  --color-secondary-fixed-dim: #b4cdba;
+  --color-on-secondary-fixed: #0a2014;
+  --color-on-secondary-fixed-variant: #364c3d;
+
+  /* 错误 */
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+
+  /* 背景 */
+  --color-background: #131313;
+  --color-on-background: #e5e2e1;
+  --color-surface-variant: #353534;
+
+  /* --- 字体 --- */
+  --font-display: "Playfair Display", "Times New Roman", serif;
+  --font-body: "Geist", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+  --font-headline-md: "Playfair Display", "Times New Roman", serif;
+  --font-display-lg: "Playfair Display", "Times New Roman", serif;
+  --font-display-lg-mobile: "Playfair Display", "Times New Roman", serif;
+  --font-body-md: "Geist", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-body-lg: "Geist", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-code-sm: "JetBrains Mono", Consolas, monospace;
+  --font-label-caps: "JetBrains Mono", Consolas, monospace;
+
+  /* --- 字号（含行高/字重/字距） --- */
+  --text-display-lg: 84px;
+  --text-display-lg--line-height: 1.1;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 700;
+  --text-display-lg-mobile: 48px;
+  --text-display-lg-mobile--line-height: 1.2;
+  --text-display-lg-mobile--letter-spacing: -0.01em;
+  --text-display-lg-mobile--font-weight: 700;
+  --text-headline-md: 42px;
+  --text-headline-md--line-height: 1.2;
+  --text-headline-md--font-weight: 600;
+  --text-body-lg: 18px;
+  --text-body-lg--line-height: 1.6;
+  --text-body-lg--font-weight: 400;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 1.5;
+  --text-body-md--font-weight: 400;
+  --text-label-caps: 12px;
+  --text-label-caps--line-height: 1;
+  --text-label-caps--letter-spacing: 0.1em;
+  --text-label-caps--font-weight: 500;
+  --text-code-sm: 14px;
+  --text-code-sm--line-height: 1.4;
+  --text-code-sm--font-weight: 400;
+
+  /* --- 间距 --- */
+  --spacing-gutter-desktop: 32px;
+  --spacing-gutter-mobile: 16px;
+  --spacing-margin-safe: 24px;
+  --spacing-container-max: 1280px;
+  --spacing-unit: 4px;
+
+  /* --- 圆角（锐利风格） --- */
+  --radius-default: 0.25rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
+/* ==========================================================================
+   全局基础
+   ========================================================================== */
+
 :root {
   color-scheme: dark;
 }
@@ -12,14 +120,94 @@ body,
 
 body {
   margin: 0;
-  background-color: #0f172a; /* slate-900 */
-  color: #e2e8f0; /* slate-200 */
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    "Microsoft YaHei",
-    "PingFang SC",
-    sans-serif;
+  background-color: #050505;
+  color: var(--color-on-background);
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
+  background-image:
+    linear-gradient(rgba(46, 204, 113, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(46, 204, 113, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+::selection {
+  background-color: var(--color-primary-container);
+  color: var(--color-on-primary-container);
+}
+
+/* ==========================================================================
+   自定义组件类（设计规范通用）
+   ========================================================================== */
+
+/* 技术网格背景（HUD 感） */
+.tech-grid {
+  background-image:
+    linear-gradient(to right, rgba(46, 204, 113, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(46, 204, 113, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: center center;
+}
+
+/* 固定网格覆盖层（页面背景用） */
+.grid-overlay {
+  background-image:
+    linear-gradient(to right, rgba(46, 204, 113, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(46, 204, 113, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+}
+
+/* Bento 卡片：低对比半透明 + 绿色边框，hover 变金 */
+.bento-item {
+  background-color: rgba(28, 27, 27, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(46, 204, 113, 0.2);
+}
+.bento-item:hover {
+  border-color: #ffd700;
+}
+
+/* 技术边框（设置页卡片） */
+.tech-border {
+  border: 1px solid rgba(46, 204, 113, 0.2);
+}
+.tech-border:hover {
+  border-color: #ffd700;
+}
+
+/* 键帽 */
+.kbd-key {
+  border: 1px solid rgba(46, 204, 113, 0.2);
+  background: #201f1f;
+  border-radius: 4px;
+  padding: 4px 8px;
+  box-shadow: inset 0 -2px 0 rgba(46, 204, 113, 0.1);
+}
+
+/* 技术复选框（金色勾选） */
+.tech-checkbox:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='%233a3000' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+}
+.tech-checkbox:focus {
+  box-shadow:
+    0 0 0 2px var(--color-background),
+    0 0 0 4px var(--color-primary);
+}
+
+/* 舞台灯光（编排页顶部光晕） */
+.stage-lighting {
+  background:
+    radial-gradient(circle at 50% -20%, rgba(138, 43, 226, 0.15) 0%, transparent 70%),
+    radial-gradient(circle at 80% -10%, rgba(255, 105, 180, 0.1) 0%, transparent 60%);
+}
+
+/* Material Symbols 图标 */
+.material-symbols-outlined {
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 300,
+    'GRAD' 0,
+    'opsz' 24;
 }
