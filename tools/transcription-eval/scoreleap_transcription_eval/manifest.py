@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+MAX_ASSET_BYTES = 200 * 1024 * 1024
+HASH_CHUNK_BYTES = 1024 * 1024
 
 
 def _require_mapping(value: object, location: str) -> dict:
@@ -23,8 +25,37 @@ def _validate_asset(value: object, location: str) -> None:
         raise ValueError(f"{location}.sha256 必须是 64 位十六进制摘要")
 
 
+def resolve_asset_path(manifest_path: str | Path, asset_path: str) -> Path:
+    """将资产限制在清单目录内，解析路径时同时跟随已有符号链接。"""
+    root = Path(manifest_path).resolve(strict=True).parent
+    relative = Path(asset_path)
+    if relative.is_absolute():
+        raise ValueError(f"资产路径必须相对于数据集根目录: {asset_path}")
+    resolved = (root / relative).resolve(strict=False)
+    try:
+        resolved.relative_to(root)
+    except ValueError as error:
+        raise ValueError(f"资产路径越过数据集根目录: {asset_path}") from error
+    return resolved
+
+
+def _stream_sha256(path: Path) -> str:
+    size = path.stat().st_size
+    if size > MAX_ASSET_BYTES:
+        raise ValueError(f"资产超过 {MAX_ASSET_BYTES} 字节限制: {path}")
+    digest = hashlib.sha256()
+    total = 0
+    with path.open("rb") as stream:
+        while chunk := stream.read(HASH_CHUNK_BYTES):
+            total += len(chunk)
+            if total > MAX_ASSET_BYTES:
+                raise ValueError(f"资产超过 {MAX_ASSET_BYTES} 字节限制: {path}")
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def load_and_validate_manifest(path: str | Path, verify_files: bool = False) -> dict:
-    manifest_path = Path(path)
+    manifest_path = Path(path).resolve(strict=True)
     data = _require_mapping(json.loads(manifest_path.read_text(encoding="utf-8")), "manifest")
     if data.get("schema_version") != 1:
         raise ValueError("schema_version 必须为 1")
@@ -44,6 +75,10 @@ def load_and_validate_manifest(path: str | Path, verify_files: bool = False) -> 
         identifiers.add(sample["id"])
         _validate_asset(sample.get("audio"), f"{location}.audio")
         _validate_asset(sample.get("reference_midi"), f"{location}.reference_midi")
+        resolved_assets = {
+            asset_name: resolve_asset_path(manifest_path, sample[asset_name]["path"])
+            for asset_name in ("audio", "reference_midi")
+        }
 
         segment = _require_mapping(sample.get("segment"), f"{location}.segment")
         start, end = segment.get("start_seconds"), segment.get("end_seconds")
@@ -66,12 +101,10 @@ def load_and_validate_manifest(path: str | Path, verify_files: bool = False) -> 
         if verify_files:
             for asset_name in ("audio", "reference_midi"):
                 asset = sample[asset_name]
-                asset_path = Path(asset["path"])
-                if not asset_path.is_absolute():
-                    asset_path = manifest_path.parent / asset_path
+                asset_path = resolved_assets[asset_name]
                 if not asset_path.is_file():
                     raise ValueError(f"文件不存在: {asset_path}")
-                digest = hashlib.sha256(asset_path.read_bytes()).hexdigest()
+                digest = _stream_sha256(asset_path)
                 if digest.lower() != asset["sha256"].lower():
                     raise ValueError(f"SHA256 不匹配: {asset_path}")
     return data
