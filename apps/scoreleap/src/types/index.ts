@@ -98,6 +98,7 @@ export type ModelStatus =
   | 'downloading'
   | 'failed'
 
+<<<<<<< HEAD
 export interface DiagnosticsView {
   model_status: string
   model_configured: boolean
@@ -115,6 +116,8 @@ export interface DiagnosticsView {
   error: string | null
 }
 
+=======
+>>>>>>> feat/onnx-product-integration
 export interface ModelStatusView {
   status: ModelStatus
   configured: boolean

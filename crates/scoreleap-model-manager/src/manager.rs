@@ -223,7 +223,7 @@ impl ModelManager {
         }
         candidates.sort_by(|left, right| {
             compare_version(&left.manifest.version, &right.manifest.version)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .expect("已验证目录中的模型版本必须可比较")
         });
         Ok(candidates.pop())
     }

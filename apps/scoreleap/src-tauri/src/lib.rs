@@ -3,7 +3,10 @@
 //! 注意：命令函数**必须为非 pub**——tauri-macros 对 pub 命令生成
 //! `#[macro_export]` + `pub use`，与 rustc 的宏命名空间检查冲突（E0255）。
 
+<<<<<<< HEAD
 mod diagnostics;
+=======
+>>>>>>> feat/onnx-product-integration
 mod model;
 
 use std::sync::{Arc, Mutex};
@@ -197,11 +200,20 @@ fn get_audio_file_info(path: String) -> Result<scoreleap_core::AudioFileInfo, Co
 /// 转录服务状态（惰性创建；终态任务保留供前端查询）。
 struct TxState(Mutex<Option<TranscriptionService>>);
 
+<<<<<<< HEAD
+=======
+const NATIVE_WORKER_RESOURCE: &str = "scoreleap-transcriber/scoreleap-transcriber-native.exe";
+
+>>>>>>> feat/onnx-product-integration
 /// 原生 sidecar 路径解析：发布版仅接受资源目录，开发版允许显式环境变量覆盖。
 fn resolve_worker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     model::resolve_packaged_file(
         app,
+<<<<<<< HEAD
         std::path::Path::new("scoreleap-transcriber/scoreleap-transcriber-native.exe"),
+=======
+        std::path::Path::new(NATIVE_WORKER_RESOURCE),
+>>>>>>> feat/onnx-product-integration
         "SCORELEAP_WORKER_PATH",
     )
 }
@@ -220,8 +232,16 @@ fn get_or_init_transcription(
 ) -> Result<TranscriptionService, TranscriptionError> {
     let mut guard = tx.0.lock().unwrap();
     if let Some(svc) = guard.as_ref() {
+<<<<<<< HEAD
         if svc.status().is_some_and(|job| !job.status.is_terminal()) {
             return Ok(svc.clone());
+=======
+        match svc.status() {
+            Some(job) if job.status.is_terminal() => {
+                // 终态任务后重建服务，以便下一次启动读取新激活的模型。
+            }
+            _ => return Ok(svc.clone()),
+>>>>>>> feat/onnx-product-integration
         }
     }
     // 解析 Worker 路径
@@ -237,8 +257,19 @@ fn get_or_init_transcription(
             "未找到 ONNX Runtime，请重新安装完整版本",
         )
     })?;
+<<<<<<< HEAD
     let model_path = model::resolve_active_model(app).map_err(|message| {
         TranscriptionError::new(TranscriptionErrorCode::ModelDownloadRequired, message)
+=======
+    let model_path = model::resolve_active_model(app).map_err(|error| {
+        let code = match &error {
+            scoreleap_model_manager::ModelManagerError::CacheMissing(_, _) => {
+                TranscriptionErrorCode::ModelDownloadRequired
+            }
+            _ => TranscriptionErrorCode::ModelLoadFailed,
+        };
+        TranscriptionError::new(code, error.to_string())
+>>>>>>> feat/onnx-product-integration
     })?;
     tracing::info!("转录 Worker: {}", worker_program.display());
     let data_dir = app
@@ -510,4 +541,23 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod native_resource_contract_tests {
+    use super::NATIVE_WORKER_RESOURCE;
+    use std::path::Path;
+
+    #[test]
+    fn worker_resource_name_matches_native_packaging_contract() {
+        let path = Path::new(NATIVE_WORKER_RESOURCE);
+        assert_eq!(
+            path.file_name().and_then(|value| value.to_str()),
+            Some("scoreleap-transcriber-native.exe")
+        );
+        assert_eq!(
+            path.parent().and_then(|value| value.to_str()),
+            Some("scoreleap-transcriber")
+        );
+    }
 }

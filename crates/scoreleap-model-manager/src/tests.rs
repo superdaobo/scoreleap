@@ -164,6 +164,17 @@ fn latest_catalog_version_is_selected_after_catalog_verification() {
 }
 
 #[test]
+fn non_numeric_model_version_is_rejected_even_with_valid_signature() {
+    let artifact = b"onnx-model";
+    let archive = make_zip(&[("model/model.onnx", artifact)]);
+    let signed = signed_manifest("latest", &archive, artifact);
+    assert!(matches!(
+        verify_signed_manifest(&signed, &key().verifying_key()),
+        Err(ModelManagerError::InvalidManifest(_))
+    ));
+}
+
+#[test]
 fn hash_mismatch_rejects_all_sources() {
     let temp = TempDir::new().unwrap();
     let artifact = b"onnx-model";
