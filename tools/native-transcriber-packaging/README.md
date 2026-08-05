@@ -18,6 +18,8 @@ pnpm tauri build --bundles nsis
 
 准备脚本会缓存 ZIP，但每次命中缓存仍同时验证固定大小和 SHA-256。下载先写唯一临时文件，
 校验通过后才原子移动到缓存；资源目录也通过同盘 staging/rename 更新，失败时恢复原目录。
+在解压前还会拒绝绝对路径、`..` 穿越、固定根目录外条目、大小写重复项、符号链接和异常膨胀；
+如果极端情况下原目录恢复失败，脚本会保留唯一的 `.backup-*` 副本并停止构建，不会在清理阶段删除它。
 
 ## 固定的第三方资产与许可证
 
@@ -48,7 +50,7 @@ $env:SCORELEAP_E2E_AUDIO = "D:\audio\piano.mp3"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 -SidecarPath apps/scoreleap/src-tauri/resources/scoreleap-transcriber/scoreleap-transcriber-native.exe -RuntimeDirectory apps/scoreleap/src-tauri/resources/scoreleap-transcriber -RequireRealAssets
 ```
 
-脚本验证 MIDI `MThd`、metadata 和正音符数，并写出墙钟耗时、音频时长与 RTF。它只记录音频
+脚本验证 MIDI `MThd`、metadata 顶层 `duration_seconds` 和正音符数，并写出墙钟耗时、音频时长与 RTF。它只记录音频
 文件名和 SHA-256，不把绝对音频路径写入报告。CI 未配置真实资产时会明确跳过真实转录，而不把
 协议冒烟误报为质量验收。
 
