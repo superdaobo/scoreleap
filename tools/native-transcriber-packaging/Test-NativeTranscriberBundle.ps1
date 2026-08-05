@@ -1,7 +1,8 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ResourceDirectory
+    [string]$ResourceDirectory,
+    [switch]$AllowLocalRuntime
 )
 
 Set-StrictMode -Version Latest
@@ -45,22 +46,24 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if ($manifest.schema_version -ne 1) {
     throw "不支持的 runtime-manifest schema_version: $($manifest.schema_version)"
 }
-if ($manifest.onnx_runtime.version -ne "1.24.4" -or $manifest.onnx_runtime.api_version -ne 24) {
+if (-not $AllowLocalRuntime -and ($manifest.onnx_runtime.version -ne "1.24.4" -or $manifest.onnx_runtime.api_version -ne 24)) {
     throw "ONNX Runtime 版本或 API 版本不符合发布契约"
 }
-if (
-    $manifest.onnx_runtime.architecture -ne "x64" -or
-    $manifest.onnx_runtime.execution_provider -ne "cpu" -or
-    $manifest.onnx_runtime.asset_id -ne 376015528 -or
-    $manifest.onnx_runtime.archive_name -ne "onnxruntime-win-x64-1.24.4.zip" -or
-    $manifest.onnx_runtime.archive_size_bytes -ne 74442783 -or
-    $manifest.onnx_runtime.asset_url -ne "https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-win-x64-1.24.4.zip" -or
-    $manifest.onnx_runtime.asset_api_url -ne "https://api.github.com/repos/microsoft/onnxruntime/releases/assets/376015528"
-) {
-    throw "runtime-manifest 中的官方资产身份信息不符合固定发布契约"
-}
-if ($manifest.onnx_runtime.archive_sha256 -ne "d2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357") {
-    throw "runtime-manifest 中的官方资产 SHA-256 不符合固定值"
+if (-not $AllowLocalRuntime) {
+    if (
+        $manifest.onnx_runtime.architecture -ne "x64" -or
+        $manifest.onnx_runtime.execution_provider -ne "cpu" -or
+        $manifest.onnx_runtime.asset_id -ne 376015528 -or
+        $manifest.onnx_runtime.archive_name -ne "onnxruntime-win-x64-1.24.4.zip" -or
+        $manifest.onnx_runtime.archive_size_bytes -ne 74442783 -or
+        $manifest.onnx_runtime.asset_url -ne "https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-win-x64-1.24.4.zip" -or
+        $manifest.onnx_runtime.asset_api_url -ne "https://api.github.com/repos/microsoft/onnxruntime/releases/assets/376015528"
+    ) {
+        throw "runtime-manifest 中的官方资产身份信息不符合固定发布契约"
+    }
+    if ($manifest.onnx_runtime.archive_sha256 -ne "d2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357") {
+        throw "runtime-manifest 中的官方资产 SHA-256 不符合固定值"
+    }
 }
 if ($manifest.bundled_model -ne $false -or $manifest.python_required -ne $false) {
     throw "runtime-manifest 错误声明了内置模型或 Python 依赖"

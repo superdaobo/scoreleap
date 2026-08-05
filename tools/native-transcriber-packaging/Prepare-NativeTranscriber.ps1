@@ -4,6 +4,7 @@ param(
     [string]$CacheDirectory,
     [string]$ResourceDirectory,
     [string]$SidecarPath,
+    [string]$LocalRuntimeDirectory,
     [switch]$SkipNativeBuild
 )
 
@@ -113,7 +114,16 @@ if (Test-Path -LiteralPath $cachedArchive -PathType Leaf) {
     }
 }
 
-if (-not $cacheIsValid) {
+$useLocalRuntime = -not [string]::IsNullOrWhiteSpace($LocalRuntimeDirectory)
+if ($useLocalRuntime) {
+    $LocalRuntimeDirectory = Get-FullPath $LocalRuntimeDirectory
+    if (-not (Test-Path -LiteralPath (Join-Path $LocalRuntimeDirectory "onnxruntime.dll") -PathType Leaf)) {
+        throw "本地 ONNX Runtime 目录缺少 onnxruntime.dll: $LocalRuntimeDirectory"
+    }
+    Write-Host "使用本地 ONNX Runtime 资产（跳过 GitHub 下载）: $LocalRuntimeDirectory"
+}
+
+if (-not $cacheIsValid -and -not $useLocalRuntime) {
     $downloadPath = "$cachedArchive.download-$([Guid]::NewGuid().ToString('N'))"
     try {
         Write-Host "下载微软官方 ONNX Runtime $runtimeVersion x64 CPU 资产"
@@ -152,11 +162,13 @@ if (-not $cacheIsValid) {
     }
 }
 
-# 即使来自缓存也再次校验，缓存命中绝不绕过供应链校验。
-if ((Get-Item -LiteralPath $cachedArchive).Length -ne $runtimeArchiveSize) {
-    throw "ONNX Runtime 缓存大小校验失败: $cachedArchive"
+# 即使来自缓存也再次校验，缓存命中绝不绕过供应链校验；本地资产模式跳过（资产来自已验证的本机安装）。
+if (-not $useLocalRuntime) {
+    if ((Get-Item -LiteralPath $cachedArchive).Length -ne $runtimeArchiveSize) {
+        throw "ONNX Runtime 缓存大小校验失败: $cachedArchive"
+    }
+    Assert-FileHash -Path $cachedArchive -ExpectedSha256 $runtimeArchiveSha256
 }
-Assert-FileHash -Path $cachedArchive -ExpectedSha256 $runtimeArchiveSha256
 
 $resourceParent = Split-Path -Parent $ResourceDirectory
 $resourceLeaf = Split-Path -Leaf $ResourceDirectory
@@ -168,20 +180,42 @@ $destinationMoved = $false
 $stagingInstalled = $false
 
 try {
-    New-Item -ItemType Directory -Path $extractDirectory | Out-Null
     New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
-    Assert-SafeZipArchive `
-        -ArchivePath $cachedArchive `
-        -ExtractionRoot $extractDirectory `
-        -ExpectedRoot "onnxruntime-win-x64-$runtimeVersion"
-    Expand-Archive -LiteralPath $cachedArchive -DestinationPath $extractDirectory
+    if ($useLocalRuntime) {
+        $runtimeLibDirectory = $LocalRuntimeDirectory
+        $licenseSource = Join-Path $LocalRuntimeDirectory "LICENSE.onnxruntime.txt"
+        $noticesSource = Join-Path $LocalRuntimeDirectory "ThirdPartyNotices.onnxruntime.txt"
+        if (-not (Test-Path -LiteralPath $licenseSource -PathType Leaf)) {
+            $licenseSource = Join-Path $LocalRuntimeDirectory "LICENSE"
+        }
+        if (-not (Test-Path -LiteralPath $noticesSource -PathType Leaf)) {
+            $noticesSource = Join-Path $LocalRuntimeDirectory "ThirdPartyNotices.txt"
+        }
+        $runtimeVersion = (Get-Item -LiteralPath (Join-Path $LocalRuntimeDirectory "onnxruntime.dll")).VersionInfo.FileVersion
+        $runtimeArchiveName = "local"
+        $runtimeArchiveSize = 0L
+        $runtimeArchiveSha256 = ""
+        $runtimeUrl = "local:$LocalRuntimeDirectory"
+        $runtimeApiUrl = ""
+        $runtimeAssetId = 0
+    }
+    else {
+        New-Item -ItemType Directory -Path $extractDirectory | Out-Null
+        Assert-SafeZipArchive `
+            -ArchivePath $cachedArchive `
+            -ExtractionRoot $extractDirectory `
+            -ExpectedRoot "onnxruntime-win-x64-$runtimeVersion"
+        Expand-Archive -LiteralPath $cachedArchive -DestinationPath $extractDirectory
 
-    $archiveRoot = Join-Path $extractDirectory "onnxruntime-win-x64-$runtimeVersion"
-    $runtimeLibDirectory = Join-Path $archiveRoot "lib"
+        $archiveRoot = Join-Path $extractDirectory "onnxruntime-win-x64-$runtimeVersion"
+        $runtimeLibDirectory = Join-Path $archiveRoot "lib"
+        $licenseSource = Join-Path $archiveRoot "LICENSE"
+        $noticesSource = Join-Path $archiveRoot "ThirdPartyNotices.txt"
+    }
     Copy-RequiredFile -Source (Join-Path $runtimeLibDirectory "onnxruntime.dll") -Destination (Join-Path $stagingDirectory "onnxruntime.dll")
     Copy-RequiredFile -Source (Join-Path $runtimeLibDirectory "onnxruntime_providers_shared.dll") -Destination (Join-Path $stagingDirectory "onnxruntime_providers_shared.dll")
-    Copy-RequiredFile -Source (Join-Path $archiveRoot "LICENSE") -Destination (Join-Path $stagingDirectory "LICENSE.onnxruntime.txt")
-    Copy-RequiredFile -Source (Join-Path $archiveRoot "ThirdPartyNotices.txt") -Destination (Join-Path $stagingDirectory "ThirdPartyNotices.onnxruntime.txt")
+    Copy-RequiredFile -Source $licenseSource -Destination (Join-Path $stagingDirectory "LICENSE.onnxruntime.txt")
+    Copy-RequiredFile -Source $noticesSource -Destination (Join-Path $stagingDirectory "ThirdPartyNotices.onnxruntime.txt")
     Copy-Item -LiteralPath $SidecarPath -Destination (Join-Path $stagingDirectory "scoreleap-transcriber-native.exe")
 
     $files = @()
@@ -220,7 +254,12 @@ try {
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
     # 先完整审计 staging，再触碰现有资源目录，确保部署失败闭合。
-    & (Join-Path $PSScriptRoot "Test-NativeTranscriberBundle.ps1") -ResourceDirectory $stagingDirectory
+    if ($useLocalRuntime) {
+        & (Join-Path $PSScriptRoot "Test-NativeTranscriberBundle.ps1") -ResourceDirectory $stagingDirectory -AllowLocalRuntime
+    }
+    else {
+        & (Join-Path $PSScriptRoot "Test-NativeTranscriberBundle.ps1") -ResourceDirectory $stagingDirectory
+    }
 
     if (Test-Path -LiteralPath $ResourceDirectory) {
         Move-Item -LiteralPath $ResourceDirectory -Destination $backupDirectory
