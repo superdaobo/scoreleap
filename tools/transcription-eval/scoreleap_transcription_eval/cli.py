@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .gates import apply_quality_gates
+from .maestro import fetch_maestro_sample
 from .manifest import load_and_validate_manifest, resolve_asset_path
 from .metrics import ONSET_TOLERANCE_SECONDS, OFFSET_DURATION_RATIO, OFFSET_MIN_TOLERANCE_SECONDS, evaluate_notes
 from .midi import read_midi_notes
@@ -42,13 +43,20 @@ def build_parser() -> argparse.ArgumentParser:
     manifest = subparsers.add_parser("validate-manifest", help="校验评测数据清单")
     manifest.add_argument("manifest", type=Path)
     manifest.add_argument("--verify-files", action="store_true")
+    fetch_maestro = subparsers.add_parser(
+        "fetch-maestro", help="从官方远程 ZIP 按范围获取单个 MAESTRO 样本"
+    )
+    fetch_maestro.add_argument("--sample-index", type=int, required=True)
+    fetch_maestro.add_argument("--output-dir", type=Path, required=True)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.command == "validate-manifest":
+        if args.command == "fetch-maestro":
+            payload = fetch_maestro_sample(args.sample_index, args.output_dir)
+        elif args.command == "validate-manifest":
             data = load_and_validate_manifest(args.manifest, args.verify_files)
             payload = {"valid": True, "sample_count": len(data["samples"]), "files_verified": args.verify_files}
         elif args.command in {"evaluate", "gate"}:

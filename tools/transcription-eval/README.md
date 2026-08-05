@@ -10,6 +10,7 @@ python -m scoreleap_transcription_eval evaluate reference.mid prediction.mid --m
 python -m scoreleap_transcription_eval gate reference.mid prediction.mid --manifest manifest.json --sample-id maestro-hidden-001
 python -m scoreleap_transcription_eval compare-formats lossless.mid encoded.mid
 python -m scoreleap_transcription_eval validate-manifest manifest.json --verify-files
+python -m scoreleap_transcription_eval fetch-maestro --sample-index 92 --output-dir D:\\tmp\\scoreleap-eval
 python -m unittest discover -s tests -v
 ```
 
@@ -39,3 +40,5 @@ python -m unittest discover -s tests -v
 ## 数据边界
 
 MAESTRO、MAPS 和 `8月4日.MP3` 及其人工参考 MIDI 只能保存在本机 `D:\tmp` 下。严禁将第三方数据、用户音频、切片、派生 MIDI 或本地清单提交到仓库。本目录测试夹具均在临时目录中由程序生成。
+
+`fetch-maestro` 只从 Google 官方 MAESTRO v3.0.0 HTTPS 地址读取；它利用 ZIP 字节范围请求获取指定索引的 WAV/MIDI，而不会下载 101GB 完整归档。命令拒绝覆盖已有目标，限制单个解压资产不超过 200MiB，并在本地清单中记录官方归档 SHA256 与逐资产 SHA256。索引 `92` 是官方 `test` split 中时长最短的样本（约 65.95 秒），适合快速、独立于模型实现的人工真值回归。
