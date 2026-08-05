@@ -133,4 +133,29 @@ describe('transcriptionStore', () => {
     await store.restore()
     expect(store.job?.status).toBe('Completed')
   })
+
+  it('askConfirm/dismissConfirm 管理确认界面', async () => {
+    const store = useTranscriptionStore()
+    store.askConfirm('C:/a.mp3', 'a.mp3', 1048576)
+    expect(store.pendingConfirm?.name).toBe('a.mp3')
+    expect(store.pendingConfirm?.size_bytes).toBe(1048576)
+    store.dismissConfirm()
+    expect(store.pendingConfirm).toBeNull()
+  })
+
+  it('start 成功后清除确认状态', async () => {
+    vi.mocked(api.startAudioTranscription).mockResolvedValue('job-1')
+    vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
+    const store = useTranscriptionStore()
+    store.askConfirm('C:/a.mp3', 'a.mp3', 1)
+    await store.start('C:/a.mp3')
+    expect(store.pendingConfirm).toBeNull()
+  })
+
+  it('errorLabel 区分结构化错误码', async () => {
+    const store = useTranscriptionStore()
+    expect(store.errorLabel('AUDIO_FILE_TOO_LARGE', 'x')).toContain('200MB')
+    expect(store.errorLabel('WORKER_NOT_FOUND', 'x')).toContain('SCORELEAP_WORKER_PATH')
+    expect(store.errorLabel(null, '回退文案')).toBe('回退文案')
+  })
 })
