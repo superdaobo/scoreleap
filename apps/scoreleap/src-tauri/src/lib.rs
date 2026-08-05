@@ -461,6 +461,13 @@ pub fn run() {
                         let _ = app.emit("playback://state", PlaybackState::Stopped);
                     }
                 });
+
+            // 启动时记录模型状态（便于诊断“模型无法下载/配置缺失”类问题）
+            {
+                let model_state = app.state::<model::ModelState>();
+                let _status = model::model_status(app.handle(), &model_state);
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
