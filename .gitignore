@@ -54,6 +54,7 @@ tools/transcription-worker/.venv/
 **/.venv/
 __pycache__/
 *.pyc
+*.egg-info/
 tools/transcription-worker/build/
 tools/transcription-worker/dist/
 experiments/basic-pitch-windows/out/
