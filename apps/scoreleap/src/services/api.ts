@@ -63,6 +63,10 @@ export function pausePlayback(): Promise<void> {
   return invoke<void>('pause_playback')
 }
 
+export function seekPlayback(positionUs: number): Promise<void> {
+  return invoke<void>('seek_playback', { positionUs })
+}
+
 /** 继续（命令 resume_playback） */
 export function resumePlayback(): Promise<void> {
   return invoke<void>('resume_playback')

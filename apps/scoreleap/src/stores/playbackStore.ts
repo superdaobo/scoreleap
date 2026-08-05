@@ -121,6 +121,15 @@ export const usePlaybackStore = defineStore('playback', () => {
     }
   }
 
+  /** 跳转到指定位置（微秒）；后端 Playing/Paused 状态均支持 */
+  async function seek(positionUs: number): Promise<void> {
+    try {
+      await api.seekPlayback(positionUs)
+    } catch (e) {
+      error.value = errorText(e)
+    }
+  }
+
   async function resume(): Promise<void> {
     try {
       await api.resumePlayback()
@@ -164,5 +173,6 @@ export const usePlaybackStore = defineStore('playback', () => {
     resume,
     stop,
     emergency,
+    seek,
   }
 })

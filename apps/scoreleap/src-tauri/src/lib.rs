@@ -135,6 +135,11 @@ fn pause_playback(state: State<'_, AppState>) -> Result<(), CoreError> {
 }
 
 #[tauri::command]
+fn seek_playback(state: State<'_, AppState>, position_us: i64) -> Result<(), CoreError> {
+    scoreleap_core::seek_playback(&state, position_us)
+}
+
+#[tauri::command]
 fn resume_playback(state: State<'_, AppState>) -> Result<(), CoreError> {
     scoreleap_core::resume_playback(&state)
 }
@@ -499,6 +504,7 @@ pub fn run() {
             start_playback,
             diagnostics::diagnose_transcription,
             pause_playback,
+            seek_playback,
             resume_playback,
             stop_playback,
             emergency_stop,
