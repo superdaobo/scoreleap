@@ -2,26 +2,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use scoreleap_model_manager::{
-<<<<<<< HEAD
-    verifying_key_from_hex, CancellationToken, DownloadPhase, HttpDownloadConfig,
-    HttpSourceDownloader, ModelManager, ModelManagerError, SignedModelCatalog, SignedModelManifest,
-    SourceKind,
-=======
     compare_version, verifying_key_from_hex, CancellationToken, DownloadPhase, ExtractionLimits,
     HttpDownloadConfig, HttpSourceDownloader, ModelManager, ModelManagerError, SignedModelCatalog,
     SignedModelManifest, SourceKind,
->>>>>>> feat/onnx-product-integration
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 const MODEL_ID: &str = "basic-pitch";
 const ENGINE_ID: &str = "scoreleap-onnx";
-<<<<<<< HEAD
-=======
 const MAX_CATALOG_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_MODEL_PACKAGE_BYTES: u64 = 1024 * 1024 * 1024;
->>>>>>> feat/onnx-product-integration
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelStatusView {
@@ -109,7 +100,6 @@ fn trusted_config_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), ModelMana
     let resource = app.path().resource_dir().map_err(|error| {
         ModelManagerError::TrustConfigurationMissing(format!("无法解析应用资源目录: {error}"))
     })?;
-<<<<<<< HEAD
     // 兼容两种布局：exe 目录直接放资源（开发/单文件），或 resources/ 子目录（安装包）。
     let candidates = [
         resource.join("scoreleap-model"),
@@ -124,12 +114,6 @@ fn trusted_config_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), ModelMana
             )
         })?;
     Ok((model_dir.join("catalog.signed.json"), model_dir.join("public-key.hex")))
-=======
-    Ok((
-        resource.join("scoreleap-model/catalog.signed.json"),
-        resource.join("scoreleap-model/public-key.hex"),
-    ))
->>>>>>> feat/onnx-product-integration
 }
 
 fn load_context(app: &AppHandle) -> Result<ModelContext, ModelManagerError> {
@@ -139,14 +123,11 @@ fn load_context(app: &AppHandle) -> Result<ModelContext, ModelManagerError> {
             "缺少 catalog.signed.json 或 public-key.hex；发布流程必须注入可信配置".into(),
         ));
     }
-<<<<<<< HEAD
-=======
     if std::fs::metadata(&catalog_path)?.len() > MAX_CATALOG_BYTES {
         return Err(ModelManagerError::InvalidManifest(
             "签名模型目录超过 4MB 安全上限".into(),
         ));
     }
->>>>>>> feat/onnx-product-integration
     let public_key = std::fs::read_to_string(public_key_path)?;
     let verifying_key = verifying_key_from_hex(&public_key)?;
     let catalog: SignedModelCatalog = serde_json::from_reader(std::fs::File::open(catalog_path)?)?;
@@ -160,29 +141,22 @@ fn load_context(app: &AppHandle) -> Result<ModelContext, ModelManagerError> {
         verifying_key,
         ENGINE_ID,
         env!("CARGO_PKG_VERSION"),
-<<<<<<< HEAD
-    );
-=======
     )
     .with_limits(ExtractionLimits {
         max_files: 32,
         max_single_file_bytes: MAX_MODEL_PACKAGE_BYTES,
         max_total_uncompressed_bytes: MAX_MODEL_PACKAGE_BYTES,
     });
->>>>>>> feat/onnx-product-integration
     let latest = manager
         .latest_from_catalog(&catalog, MODEL_ID)?
         .ok_or_else(|| {
             ModelManagerError::InvalidManifest("目录中没有与当前引擎兼容的模型".into())
         })?;
-<<<<<<< HEAD
-=======
     if latest.manifest.package.size_bytes > MAX_MODEL_PACKAGE_BYTES {
         return Err(ModelManagerError::InvalidManifest(
             "模型包超过 1GB 安全上限".into(),
         ));
     }
->>>>>>> feat/onnx-product-integration
     Ok(ModelContext {
         manager,
         latest,
@@ -211,11 +185,7 @@ fn base_status(context: &ModelContext) -> Result<ModelStatusView, ModelManagerEr
         });
     let status = match &installed_version {
         None => "not_installed",
-<<<<<<< HEAD
-        Some(version) if version != &latest.version => "update_available",
-=======
         Some(version) if catalog_version_is_newer(version, &latest.version)? => "update_available",
->>>>>>> feat/onnx-product-integration
         Some(_) => "ready",
     };
     Ok(ModelStatusView {
@@ -237,8 +207,6 @@ fn base_status(context: &ModelContext) -> Result<ModelStatusView, ModelManagerEr
     })
 }
 
-<<<<<<< HEAD
-=======
 fn catalog_version_is_newer(
     installed_version: &str,
     catalog_version: &str,
@@ -246,7 +214,6 @@ fn catalog_version_is_newer(
     Ok(compare_version(installed_version, catalog_version)?.is_lt())
 }
 
->>>>>>> feat/onnx-product-integration
 pub fn model_status(app: &AppHandle, state: &ModelState) -> ModelStatusView {
     let mut status = match load_context(app) {
         Ok(context) => match base_status(&context) {
@@ -255,10 +222,6 @@ pub fn model_status(app: &AppHandle, state: &ModelState) -> ModelStatusView {
                 let mut status = ModelStatusView::missing_configuration(error.to_string());
                 status.status = "failed".into();
                 status.configured = true;
-<<<<<<< HEAD
-                status.latest_version = Some(context.latest.manifest.version.clone());
-                status.size_bytes = Some(context.latest.manifest.package.size_bytes);
-=======
                 status.installed_version = context
                     .manager
                     .active_version(MODEL_ID)
@@ -278,7 +241,6 @@ pub fn model_status(app: &AppHandle, state: &ModelState) -> ModelStatusView {
                             .validate_cached(MODEL_ID, &version.version)
                             .is_ok()
                     });
->>>>>>> feat/onnx-product-integration
                 status
             }
         },
@@ -294,7 +256,6 @@ pub fn model_status(app: &AppHandle, state: &ModelState) -> ModelStatusView {
     status.total_bytes = runtime.total_bytes.or(status.total_bytes);
     status.source = runtime.source.clone().or(status.source);
     status.error = runtime.error.clone().or(status.error);
-<<<<<<< HEAD
     tracing::info!(
         status = %status.status,
         configured = status.configured,
@@ -303,15 +264,11 @@ pub fn model_status(app: &AppHandle, state: &ModelState) -> ModelStatusView {
         model_error = ?status.error,
         "模型状态"
     );
-=======
->>>>>>> feat/onnx-product-integration
     status
 }
 
 pub fn start_download(app: AppHandle, state: &ModelState) -> Result<(), String> {
     let context = load_context(&app).map_err(|error| error.to_string())?;
-<<<<<<< HEAD
-=======
     if let Some(active) = context
         .manager
         .active_version(MODEL_ID)
@@ -328,7 +285,6 @@ pub fn start_download(app: AppHandle, state: &ModelState) -> Result<(), String> 
             return Err("当前已安装相同或更新的有效模型，无需下载".into());
         }
     }
->>>>>>> feat/onnx-product-integration
     let cancellation = CancellationToken::default();
     {
         let mut runtime = state.0.lock().unwrap();
@@ -380,12 +336,9 @@ pub fn start_download(app: AppHandle, state: &ModelState) -> Result<(), String> 
                 .manager
                 .install(&context.latest, &downloader, &cancellation)
                 .map_err(|error| error.to_string())?;
-<<<<<<< HEAD
-=======
             if cancellation.is_cancelled() {
                 return Err(ModelManagerError::Cancelled.to_string());
             }
->>>>>>> feat/onnx-product-integration
             context
                 .manager
                 .activate(MODEL_ID, &context.latest.manifest.version)
@@ -419,36 +372,13 @@ pub fn cancel_download(state: &ModelState) -> Result<(), String> {
 }
 
 pub fn rollback(app: &AppHandle, state: &ModelState) -> Result<ModelStatusView, String> {
-<<<<<<< HEAD
-    if state.0.lock().unwrap().downloading {
-        return Err("模型下载期间不能回滚".into());
-    }
-=======
     // 在检查状态到提交回滚期间持续持有操作锁，避免下载激活与回滚交叉写指针。
     let mut runtime = acquire_rollback_operation(state)?;
->>>>>>> feat/onnx-product-integration
     let context = load_context(app).map_err(|error| error.to_string())?;
     context
         .manager
         .rollback(MODEL_ID)
         .map_err(|error| error.to_string())?;
-<<<<<<< HEAD
-    state.0.lock().unwrap().error = None;
-    Ok(model_status(app, state))
-}
-
-pub fn resolve_active_model(app: &AppHandle) -> Result<PathBuf, String> {
-    let context = load_context(app).map_err(|error| error.to_string())?;
-    let active = context
-        .manager
-        .active_version(MODEL_ID)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "尚未安装转录模型".to_string())?;
-    let manifest = context
-        .manager
-        .validate_cached(MODEL_ID, &active.version)
-        .map_err(|error| error.to_string())?;
-=======
     runtime.error = None;
     drop(runtime);
     Ok(model_status(app, state))
@@ -471,37 +401,22 @@ pub fn resolve_active_model(app: &AppHandle) -> Result<PathBuf, ModelManagerErro
         .active_version(MODEL_ID)?
         .ok_or_else(|| ModelManagerError::CacheMissing(MODEL_ID.into(), "active".into()))?;
     let manifest = context.manager.validate_cached(MODEL_ID, &active.version)?;
->>>>>>> feat/onnx-product-integration
     let relative = manifest
         .manifest
         .artifacts
         .iter()
         .find(|artifact| artifact.path.to_ascii_lowercase().ends_with(".onnx"))
-<<<<<<< HEAD
-        .ok_or_else(|| "模型包缺少 ONNX 文件".to_string())?;
-=======
         .ok_or_else(|| ModelManagerError::CacheInvalid("模型包缺少 ONNX 文件".into()))?;
->>>>>>> feat/onnx-product-integration
     let path = context
         .manager
         .version_path(MODEL_ID, &active.version)
         .join(&relative.path);
-<<<<<<< HEAD
-    let canonical = path.canonicalize().map_err(|error| error.to_string())?;
-    let root = context
-        .model_root
-        .canonicalize()
-        .map_err(|error| error.to_string())?;
-    if !canonical.starts_with(root) || !canonical.is_file() {
-        return Err("模型路径越出应用数据目录".into());
-=======
     let canonical = path.canonicalize()?;
     let root = context.model_root.canonicalize()?;
     if !canonical.starts_with(root) || !canonical.is_file() {
         return Err(ModelManagerError::CacheInvalid(
             "模型路径越出应用数据目录".into(),
         ));
->>>>>>> feat/onnx-product-integration
     }
     Ok(canonical)
 }
@@ -518,7 +433,6 @@ pub fn resolve_packaged_file(
             return path.canonicalize().ok();
         }
     }
-<<<<<<< HEAD
     let resource = app.path().resource_dir().ok()?;
     let root = resource.canonicalize().unwrap_or_else(|_| resource.clone());
     for base in [&resource, &resource.join("resources")] {
@@ -532,10 +446,6 @@ pub fn resolve_packaged_file(
         }
     }
     None
-=======
-    let root = app.path().resource_dir().ok()?.canonicalize().ok()?;
-    let candidate = root.join(relative).canonicalize().ok()?;
-    (candidate.starts_with(&root) && candidate.is_file()).then_some(candidate)
 }
 
 #[cfg(test)]
@@ -564,5 +474,4 @@ mod tests {
         drop(guard);
         assert!(idle.0.try_lock().is_ok());
     }
->>>>>>> feat/onnx-product-integration
 }

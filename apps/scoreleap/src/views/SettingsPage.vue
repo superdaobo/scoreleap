@@ -4,18 +4,14 @@ import { useRouter } from 'vue-router'
 import { useSettingsStore, type LogLevel } from '../stores/settingsStore'
 import { useTranscriptionStore } from '../stores/transcriptionStore'
 import { useModelStore } from '../stores/modelStore'
-<<<<<<< HEAD
 import * as api from '../services/api'
 import { errorText } from '../utils/format'
 import type { DiagnosticsView } from '../types'
-=======
->>>>>>> feat/onnx-product-integration
 
 const settings = useSettingsStore()
 const router = useRouter()
 const transcription = useTranscriptionStore()
 const modelStore = useModelStore()
-<<<<<<< HEAD
 const diagnostics = ref<DiagnosticsView | null>(null)
 const diagnosticsRunning = ref(false)
 
@@ -45,8 +41,6 @@ async function runDiagnostics(): Promise<void> {
     diagnosticsRunning.value = false
   }
 }
-=======
->>>>>>> feat/onnx-product-integration
 
 const showRiskModal = ref(false)
 const reAgree = ref(false)
@@ -193,7 +187,6 @@ async function confirmReAgree(): Promise<void> {
         <span class="rounded-full bg-slate-700/70 px-2.5 py-1 text-xs text-slate-200" aria-live="polite">
           {{ modelStatusLabel }}
         </span>
-<<<<<<< HEAD
         <button
           type="button"
           class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 transition hover:border-slate-400 disabled:opacity-50"
@@ -217,8 +210,6 @@ async function confirmReAgree(): Promise<void> {
           <div><dt class="inline text-slate-500">应用数据：</dt><dd class="inline">{{ diagnostics.app_data_dir ?? '?' }}</dd></div>
         </dl>
         <p v-if="diagnostics.error" class="mt-2 text-red-300">错误：{{ diagnostics.error }}</p>
-=======
->>>>>>> feat/onnx-product-integration
       </div>
 
       <dl class="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -304,11 +295,7 @@ async function confirmReAgree(): Promise<void> {
           <input id="frame-threshold" v-model.number="transcription.frameThreshold" type="range" min="0" max="1" step="0.01" class="mt-2 w-full accent-indigo-500" :disabled="!transcription.advancedEnabled" />
         </label>
         <label class="text-xs text-slate-400" for="minimum-note-ms">最短音符（毫秒）
-<<<<<<< HEAD
-          <input id="minimum-note-ms" v-model.number="transcription.minimumNoteMs" type="number" min="10" max="5000" class="mt-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200" :disabled="!transcription.advancedEnabled" />
-=======
           <input id="minimum-note-ms" v-model.number="transcription.minimumNoteMs" type="number" min="20" max="2000" step="1" class="mt-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200" :disabled="!transcription.advancedEnabled" />
->>>>>>> feat/onnx-product-integration
         </label>
       </div>
     </section>

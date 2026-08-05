@@ -173,10 +173,7 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     error.value = null
     starting.value = true
     try {
-<<<<<<< HEAD
-=======
       if (advancedEnabled.value) validateAdvancedOptions()
->>>>>>> feat/onnx-product-integration
       const jobId = await api.startAudioTranscription(path, {
         preset: preset.value,
         onset_threshold: advancedEnabled.value ? onsetThreshold.value : null,
@@ -261,8 +258,6 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     onsetThreshold,
     frameThreshold,
     minimumNoteMs,
-<<<<<<< HEAD
-=======
   }
 
   function validateAdvancedOptions(): void {
@@ -283,7 +278,6 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     ) {
       throw new Error('最短音符必须是 20 到 2000 之间的整数毫秒值')
     }
->>>>>>> feat/onnx-product-integration
   }
 })
 

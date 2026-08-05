@@ -1,5 +1,4 @@
 use serde::Serialize;
-use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
 
 use crate::model::{self, ModelState};

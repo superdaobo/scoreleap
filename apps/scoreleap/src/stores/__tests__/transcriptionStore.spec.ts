@@ -165,8 +165,6 @@ describe('transcriptionStore', () => {
     expect(store.errorLabel(null, '回退文案')).toBe('回退文案')
   })
 
-<<<<<<< HEAD
-=======
   it('忽略其他任务的迟到 completed/error 事件', async () => {
     const store = useTranscriptionStore()
     store.job = { ...SAMPLE_JOB }
@@ -188,7 +186,6 @@ describe('transcriptionStore', () => {
     expect(store.job?.error_code).toBeNull()
   })
 
->>>>>>> feat/onnx-product-integration
   it('高级阈值启用后随预设传给原生 sidecar 命令', async () => {
     vi.mocked(api.startAudioTranscription).mockResolvedValue('job-1')
     vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
@@ -206,8 +203,6 @@ describe('transcriptionStore', () => {
       minimum_note_ms: 90,
     })
   })
-<<<<<<< HEAD
-=======
 
   it('拒绝超出原生运行时契约的高级参数', async () => {
     const store = useTranscriptionStore()
@@ -217,5 +212,4 @@ describe('transcriptionStore', () => {
     expect(api.startAudioTranscription).not.toHaveBeenCalled()
     expect(store.error).toContain('20 到 2000')
   })
->>>>>>> feat/onnx-product-integration
 })

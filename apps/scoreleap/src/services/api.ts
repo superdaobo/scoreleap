@@ -153,12 +153,9 @@ export function pickAudioFile(): Promise<string | null> {
   })
 }
 
-<<<<<<< HEAD
 export function diagnoseTranscription() {
   return invoke<DiagnosticsView>('diagnose_transcription')
 }
-=======
->>>>>>> feat/onnx-product-integration
 export function getTranscriptionModelStatus(): Promise<ModelStatusView> {
   return invoke<ModelStatusView>('get_transcription_model_status')
 }
