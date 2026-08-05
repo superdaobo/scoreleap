@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-08-05T10:36:14.6957393Z",
+  "sidecar": {
+    "name": "scoreleap-transcriber-native.exe",
+    "cargo_package": "scoreleap-transcriber-native"
+  },
+  "onnx_runtime": {
+    "version": "1.24.20260218.3.058787c",
+    "api_version": 24,
+    "architecture": "x64",
+    "execution_provider": "cpu",
+    "asset_url": "local:D:\\Documents\\C_learn\\scoreleap-wt\\onnx-integration\\.build-tmp\\local-ort",
+    "asset_api_url": "",
+    "asset_id": 0,
+    "archive_name": "local",
+    "archive_size_bytes": 0,
+    "archive_sha256": "",
+    "license": "MIT"
+  },
+  "files": [
+    {
+      "name": "LICENSE.onnxruntime.txt",
+      "size_bytes": 1094,
+      "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674"
+    },
+    {
+      "name": "onnxruntime_providers_shared.dll",
+      "size_bytes": 22048,
+      "sha256": "c0f79d3549ae77b1493aa2e2703da2cf1ee97de2f7ccc3ca724b1c282a3786a5"
+    },
+    {
+      "name": "onnxruntime.dll",
+      "size_bytes": 15374408,
+      "sha256": "326bcc42fcea6eb12814518a9364f02959e76606f8ef2b1361686c7c3cf980fb"
+    },
+    {
+      "name": "scoreleap-transcriber-native.exe",
+      "size_bytes": 3085824,
+      "sha256": "24bae287e717200c7617b585ee79e31434f980153500db16b7885c0eeae8a930"
+    },
+    {
+      "name": "ThirdPartyNotices.onnxruntime.txt",
+      "size_bytes": 331175,
+      "sha256": "fb0af774b4d7cffc5b9d046f2aaeade2f37df2f80abf8033c95dfffcc77a8866"
+    }
+  ],
+  "bundled_model": false,
+  "python_required": false
+}

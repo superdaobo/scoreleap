@@ -61,5 +61,5 @@ experiments/basic-pitch-windows/out/
 tools/transcription-worker/*.egg-info/
 
 # 打包用转录 Worker（构建时复制；仅提交占位 README）
-apps/scoreleap/src-tauri/resources/scoreleap-transcriber/*
-!apps/scoreleap/src-tauri/resources/scoreleap-transcriber/README.md
+# sidecar 二进制已入库（保证拉取即用，npx tauri dev 无需先运行部署脚本）；
+# Prepare-NativeTranscriber.ps1 更新运行时后会产生 diff，属预期版本管理行为。
