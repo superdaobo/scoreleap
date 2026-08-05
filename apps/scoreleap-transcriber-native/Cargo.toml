@@ -1,0 +1,14 @@
+[package]
+name = "scoreleap-transcriber-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+scoreleap-transcribe = { path = "../../crates/scoreleap-transcribe" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
