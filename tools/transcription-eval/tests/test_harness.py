@@ -12,6 +12,7 @@ from unittest import mock
 import mido
 
 from scoreleap_transcription_eval.cli import main
+from scoreleap_transcription_eval.gates import apply_quality_gates
 from scoreleap_transcription_eval.manifest import load_and_validate_manifest
 from scoreleap_transcription_eval.metrics import Note, evaluate_notes
 
@@ -67,6 +68,29 @@ class MetricsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "有限正数"):
             evaluate_notes([], [], 0.0)
 
+    def test_release_gate_accepts_metrics_at_the_boundary(self) -> None:
+        result = apply_quality_gates({
+            "precision": 0.93,
+            "recall": 0.87,
+            "onset_f1": 0.90,
+            "onset_offset_f1": 0.75,
+            "false_notes_per_minute": 3.0,
+        })
+        self.assertTrue(result["passed"])
+        self.assertTrue(all(result["checks"].values()))
+
+    def test_release_gate_rejects_missing_or_regressed_metrics(self) -> None:
+        result = apply_quality_gates({
+            "precision": 0.929,
+            "recall": 0.90,
+            "onset_f1": 0.95,
+            "onset_offset_f1": 0.80,
+            "false_notes_per_minute": None,
+        })
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["checks"]["precision"])
+        self.assertFalse(result["checks"]["false_notes_per_minute"])
+
 
 class CliAndManifestTests(unittest.TestCase):
     def test_compare_formats_reports_identical_f1(self) -> None:
@@ -113,6 +137,36 @@ class CliAndManifestTests(unittest.TestCase):
                 ])
             self.assertEqual(exit_code, 0)
             self.assertEqual(json.loads(stdout.getvalue())["false_notes_per_minute"], 6.0)
+
+    def test_gate_returns_three_when_quality_regresses(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            audio = root / "sample.wav"
+            reference = root / "reference.mid"
+            prediction = root / "prediction.mid"
+            audio.write_bytes(b"generated")
+            write_midi(reference, [(60, 0.0, 1.0), (64, 1.0, 2.0)])
+            write_midi(prediction, [(60, 0.0, 1.0)])
+            sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "samples": [{
+                    "id": "regression", "source": "generated", "split": "test",
+                    "audio": {"path": audio.name, "sha256": sha(audio)},
+                    "reference_midi": {"path": reference.name, "sha256": sha(reference)},
+                    "segment": {"start_seconds": 0, "end_seconds": 2},
+                    "noise": None,
+                }],
+            }), encoding="utf-8")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main([
+                    "gate", str(reference), str(prediction),
+                    "--manifest", str(manifest), "--sample-id", "regression",
+                ])
+            self.assertEqual(exit_code, 3)
+            self.assertFalse(json.loads(stdout.getvalue())["quality_gate"]["passed"])
 
     def test_manifest_validates_schema_and_hashes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .gates import apply_quality_gates
 from .manifest import load_and_validate_manifest, resolve_asset_path
 from .metrics import ONSET_TOLERANCE_SECONDS, OFFSET_DURATION_RATIO, OFFSET_MIN_TOLERANCE_SECONDS, evaluate_notes
 from .midi import read_midi_notes
@@ -30,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("prediction", type=Path)
     evaluate.add_argument("--manifest", type=Path, required=True)
     evaluate.add_argument("--sample-id", required=True)
+    gate = subparsers.add_parser("gate", help="评测并执行严格发布门禁")
+    gate.add_argument("reference", type=Path)
+    gate.add_argument("prediction", type=Path)
+    gate.add_argument("--manifest", type=Path, required=True)
+    gate.add_argument("--sample-id", required=True)
     compare = subparsers.add_parser("compare-formats", help="比较同源格式转换后的音符一致性")
     compare.add_argument("reference", type=Path)
     compare.add_argument("candidate", type=Path)
@@ -45,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "validate-manifest":
             data = load_and_validate_manifest(args.manifest, args.verify_files)
             payload = {"valid": True, "sample_count": len(data["samples"]), "files_verified": args.verify_files}
-        elif args.command == "evaluate":
+        elif args.command in {"evaluate", "gate"}:
             manifest = load_and_validate_manifest(args.manifest)
             sample = next((item for item in manifest["samples"] if item["id"] == args.sample_id), None)
             if sample is None:
@@ -55,10 +61,14 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("reference MIDI 与 manifest 样本不一致")
             duration = sample["segment"]["end_seconds"] - sample["segment"]["start_seconds"]
             payload = _metrics(args.reference, args.prediction, duration)
+            if args.command == "gate":
+                payload["quality_gate"] = apply_quality_gates(payload)
         else:
             payload = _metrics(args.reference, args.candidate, None)
             payload["note_consistency_f1"] = payload["onset_f1"]
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        if args.command == "gate" and not payload["quality_gate"]["passed"]:
+            return 3
         return 0
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)

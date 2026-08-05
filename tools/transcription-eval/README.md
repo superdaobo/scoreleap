@@ -7,12 +7,15 @@
 ```powershell
 python -m pip install -r requirements.txt
 python -m scoreleap_transcription_eval evaluate reference.mid prediction.mid --manifest manifest.json --sample-id maestro-hidden-001
+python -m scoreleap_transcription_eval gate reference.mid prediction.mid --manifest manifest.json --sample-id maestro-hidden-001
 python -m scoreleap_transcription_eval compare-formats lossless.mid encoded.mid
 python -m scoreleap_transcription_eval validate-manifest manifest.json --verify-files
 python -m unittest discover -s tests -v
 ```
 
 `evaluate` 输出起音 Precision、Recall、F1，带尾音 Precision、Recall、F1，误音数/分钟、起音绝对误差中位数，以及预测相对参考的线性漂移（ms/min 与截距）。误音数/分钟严格使用所选 manifest 片段时长，即使参考 MIDI 为空也不会回退到 MIDI 尾音时间。`compare-formats` 额外输出 `note_consistency_f1`，其未经 manifest 定义的误音率固定为 `null`。
+
+`gate` 在相同评测结果上执行不可放宽的发布门禁：Precision ≥ 0.93、Recall ≥ 0.87、起音 F1 ≥ 0.90、起音+尾音 F1 ≥ 0.75、误音数/分钟 ≤ 3.0。任一指标缺失、非有限或不达标时退出码为 `3`；输入或清单错误仍使用退出码 `2`。
 
 ## 清单格式
 
