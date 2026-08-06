@@ -386,6 +386,9 @@ function onDrop(e: DragEvent): void {
           <li>• 钢琴独奏或旋律清晰的音频效果最佳；完整歌曲可能出现杂音符。</li>
           <li>• 支持 MP3/WAV/FLAC（≤200MB，≤10 分钟）。</li>
           <li>
+            • 当前引擎：{{ txStore.engine === 'high_quality' ? '高质量钢琴（Transkun v2）' : '快速（Basic Pitch）' }}。
+          </li>
+          <li v-if="txStore.engine === 'fast'">
             • 当前预设：{{ txStore.preset === 'balanced' ? '均衡' : txStore.preset === 'detail' ? '细节' : '降噪' }}（可在设置中调整）。
           </li>
         </ul>

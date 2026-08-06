@@ -16,6 +16,7 @@ import type {
   PlaybackBackend,
   PlaybackStatus,
   TrackSummary,
+  TranscriptionEngineStatusView,
   TranscriptionJobView,
   TranscriptionOptions,
   ModelStatusView,
@@ -146,6 +147,11 @@ export function cancelAudioTranscription(): Promise<void> {
 /** 当前转录任务状态（命令 get_audio_transcription_status；终态保留） */
 export function getAudioTranscriptionStatus(): Promise<TranscriptionJobView | null> {
   return invoke<TranscriptionJobView | null>('get_audio_transcription_status')
+}
+
+/** 查询快速/高质量转录引擎是否已随安装包就绪。 */
+export function getTranscriptionEngineStatus(): Promise<TranscriptionEngineStatusView> {
+  return invoke<TranscriptionEngineStatusView>('get_transcription_engine_status')
 }
 
 /** 选择受支持的本地音频文件（打开对话框；取消返回 null） */

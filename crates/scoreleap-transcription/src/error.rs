@@ -7,6 +7,7 @@ use serde::Serialize;
 pub enum TranscriptionErrorCode {
     WorkerNotFound,
     WorkerStartFailed,
+    EngineUnavailable,
     TranscriptionBusy,
     InvalidAudioPath,
     UnsupportedAudioFormat,
@@ -39,6 +40,7 @@ impl TranscriptionErrorCode {
         match self {
             Self::WorkerNotFound => "WORKER_NOT_FOUND",
             Self::WorkerStartFailed => "WORKER_START_FAILED",
+            Self::EngineUnavailable => "ENGINE_UNAVAILABLE",
             Self::TranscriptionBusy => "TRANSCRIPTION_BUSY",
             Self::InvalidAudioPath => "INVALID_AUDIO_PATH",
             Self::UnsupportedAudioFormat => "UNSUPPORTED_AUDIO_FORMAT",

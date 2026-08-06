@@ -9,6 +9,6 @@ pub use error::{TranscriptionError, TranscriptionErrorCode};
 pub use job::{JobStatus, TranscriptionJob};
 pub use protocol::WorkerMsg;
 pub use service::{
-    TranscriptionEvent, TranscriptionOptions, TranscriptionPreset, TranscriptionService,
-    WorkerSpec, ALLOWED_EXTENSIONS, MAX_FILE_BYTES,
+    TranscriptionEngine, TranscriptionEvent, TranscriptionOptions, TranscriptionPreset,
+    TranscriptionService, TranscriptionWorkers, WorkerSpec, ALLOWED_EXTENSIONS, MAX_FILE_BYTES,
 };

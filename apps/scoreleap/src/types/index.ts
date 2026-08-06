@@ -80,13 +80,21 @@ export interface TranscriptionErrorPayload {
   message: string
 }
 
+export type TranscriptionEngine = 'fast' | 'high_quality'
 export type TranscriptionPreset = 'balanced' | 'detail' | 'noise_reduced'
 
 export interface TranscriptionOptions {
+  engine: TranscriptionEngine
   preset: TranscriptionPreset
   onset_threshold: number | null
   frame_threshold: number | null
   minimum_note_ms: number | null
+}
+
+export interface TranscriptionEngineStatusView {
+  fast_available: boolean
+  high_quality_available: boolean
+  high_quality_error: string | null
 }
 
 export type ModelStatus =

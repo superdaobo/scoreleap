@@ -11,7 +11,9 @@
     "lint": "pnpm --filter scoreleap-app lint",
     "typecheck": "pnpm --filter scoreleap-app typecheck",
     "test": "pnpm --filter scoreleap-app test",
-    "test:e2e": "pnpm --filter scoreleap-app test:e2e"
+    "test:e2e": "pnpm --filter scoreleap-app test:e2e",
+    "prepare:transkun": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/transkun-worker/Prepare-TranskunWorker.ps1",
+    "test:transkun-bundle": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/transkun-worker/Test-TranskunBundle.ps1 -AllowPlaceholder"
   }
 }
 

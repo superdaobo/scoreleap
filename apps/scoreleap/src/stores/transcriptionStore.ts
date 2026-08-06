@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { TranscriptionJobView, TranscriptionPreset } from '../types'
+import type {
+  TranscriptionEngine,
+  TranscriptionEngineStatusView,
+  TranscriptionJobView,
+  TranscriptionPreset,
+} from '../types'
 import * as api from '../services/api'
 import { errorText } from '../utils/format'
 import {
@@ -34,6 +39,7 @@ export const STAGE_INDETERMINATE: Record<string, boolean> = {
 export const ERROR_LABELS: Record<string, string> = {
   WORKER_NOT_FOUND: '未找到原生转录组件，请重新安装完整版本',
   WORKER_START_FAILED: '转录组件启动失败',
+  ENGINE_UNAVAILABLE: '所选转录引擎未包含在当前安装包中，请重新安装完整版',
   TRANSCRIPTION_BUSY: '已有转录任务在进行中，请稍后再试',
   INVALID_AUDIO_PATH: '音频文件不存在或无法读取',
   UNSUPPORTED_AUDIO_FORMAT: '仅支持 MP3、WAV 或 FLAC 格式',
@@ -62,11 +68,24 @@ export interface PendingConfirm {
 }
 
 export const useTranscriptionStore = defineStore('transcription', () => {
+  const engine = ref<TranscriptionEngine>(readEngine())
+  const engineStatus = ref<TranscriptionEngineStatusView>({
+    fast_available: true,
+    high_quality_available: false,
+    high_quality_error: null,
+  })
   const preset = ref<TranscriptionPreset>(readPreset())
   const advancedEnabled = ref(false)
   const onsetThreshold = ref(0.5)
   const frameThreshold = ref(0.3)
   const minimumNoteMs = ref(58)
+  watch(engine, (value) => {
+    try {
+      localStorage.setItem('scoreleap-transcription-engine', value)
+    } catch {
+      // WebView 存储不可用时保持本次会话设置。
+    }
+  })
   watch(preset, (value) => {
     try {
       localStorage.setItem('scoreleap-transcription-preset', value)
@@ -173,12 +192,14 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     error.value = null
     starting.value = true
     try {
-      if (advancedEnabled.value) validateAdvancedOptions()
+      const useFastOptions = engine.value === 'fast' && advancedEnabled.value
+      if (useFastOptions) validateAdvancedOptions()
       const jobId = await api.startAudioTranscription(path, {
+        engine: engine.value,
         preset: preset.value,
-        onset_threshold: advancedEnabled.value ? onsetThreshold.value : null,
-        frame_threshold: advancedEnabled.value ? frameThreshold.value : null,
-        minimum_note_ms: advancedEnabled.value ? minimumNoteMs.value : null,
+        onset_threshold: useFastOptions ? onsetThreshold.value : null,
+        frame_threshold: useFastOptions ? frameThreshold.value : null,
+        minimum_note_ms: useFastOptions ? minimumNoteMs.value : null,
       })
       const view = await api.getAudioTranscriptionStatus()
       if (view && view.job_id === jobId) {
@@ -223,6 +244,23 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     }
   }
 
+  /** 读取安装包内快速/高质量引擎状态。高质量资源缺失时安全回退快速模式。 */
+  async function loadEngineStatus(): Promise<void> {
+    try {
+      engineStatus.value = await api.getTranscriptionEngineStatus()
+      if (engine.value === 'high_quality' && !engineStatus.value.high_quality_available) {
+        engine.value = 'fast'
+      }
+    } catch {
+      engineStatus.value = {
+        fast_available: true,
+        high_quality_available: false,
+        high_quality_error: '无法读取高质量转录组件状态',
+      }
+      if (engine.value === 'high_quality') engine.value = 'fast'
+    }
+  }
+
   /** 恢复最近任务状态（页面进入时调用） */
   async function restore(): Promise<void> {
     try {
@@ -248,11 +286,14 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     start,
     cancel,
     restore,
+    loadEngineStatus,
     clearError,
     pendingConfirm,
     askConfirm,
     dismissConfirm,
     errorLabel,
+    engine,
+    engineStatus,
     preset,
     advancedEnabled,
     onsetThreshold,
@@ -280,6 +321,16 @@ export const useTranscriptionStore = defineStore('transcription', () => {
     }
   }
 })
+
+function readEngine(): TranscriptionEngine {
+  try {
+    const value = localStorage.getItem('scoreleap-transcription-engine')
+    if (value === 'fast' || value === 'high_quality') return value
+  } catch {
+    // 使用默认值。
+  }
+  return 'fast'
+}
 
 function readPreset(): TranscriptionPreset {
   try {

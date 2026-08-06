@@ -49,6 +49,7 @@ onMounted(() => {
   void settings.loadProfiles()
   void modelStore.subscribe()
   void modelStore.load()
+  void transcription.loadEngineStatus()
 })
 
 const logLevels: { value: LogLevel; label: string }[] = [
@@ -304,8 +305,11 @@ async function confirmReAgree(): Promise<void> {
           </div>
         </section>
 
-        <!-- 高级阈值 -->
-        <section class="tech-border rounded-lg bg-surface-container-low p-6">
+        <!-- Basic Pitch 高级阈值；Transkun 使用模型自身的区间解码，不暴露这些阈值。 -->
+        <section
+          v-if="transcription.engine === 'fast'"
+          class="tech-border rounded-lg bg-surface-container-low p-6"
+        >
           <div class="mb-6 flex items-center justify-between border-b border-outline-variant pb-4">
             <h3 class="flex items-center gap-2 font-body-lg text-body-lg text-primary">
               <span class="material-symbols-outlined text-[20px]">tune</span>
@@ -422,10 +426,60 @@ async function confirmReAgree(): Promise<void> {
         </section>
       </div>
 
-      <!-- 右列（4 列）：识别预设 + 快捷键 -->
+      <!-- 右列（4 列）：转录引擎 + 识别预设 + 快捷键 -->
       <div class="space-y-8 lg:col-span-4">
-        <!-- 识别预设 -->
+        <!-- 转录引擎 -->
         <section class="tech-border rounded-lg bg-surface-container-low p-6">
+          <h3 class="mb-6 flex items-center gap-2 border-b border-outline-variant pb-4 font-body-lg text-body-lg text-primary">
+            <span class="material-symbols-outlined text-[20px]">neurology</span>
+            转录引擎
+          </h3>
+          <div class="space-y-4">
+            <label
+              class="tech-border block cursor-pointer rounded p-4 transition-colors"
+              :class="transcription.engine === 'fast' ? 'border-primary bg-surface' : 'bg-surface hover:bg-surface-container-highest'"
+            >
+              <div class="mb-2 flex items-center justify-between">
+                <span class="font-body-md font-semibold text-on-surface">快速（Basic Pitch）</span>
+                <span v-if="transcription.engine === 'fast'" class="material-symbols-outlined text-[18px] text-primary">check_circle</span>
+              </div>
+              <p class="font-code-sm text-code-sm text-on-surface-variant">启动快、体积小，适合简单钢琴与快速预览。</p>
+              <input v-model="transcription.engine" type="radio" name="transcription-engine" value="fast" class="sr-only" />
+            </label>
+
+            <label
+              class="tech-border block rounded p-4 transition-colors"
+              :class="[
+                transcription.engine === 'high_quality' ? 'border-primary bg-surface' : 'bg-surface',
+                transcription.engineStatus.high_quality_available
+                  ? 'cursor-pointer hover:bg-surface-container-highest'
+                  : 'cursor-not-allowed opacity-50',
+              ]"
+            >
+              <div class="mb-2 flex items-center justify-between">
+                <span class="font-body-md font-semibold text-on-surface">高质量钢琴（Transkun v2）</span>
+                <span v-if="transcription.engine === 'high_quality'" class="material-symbols-outlined text-[18px] text-primary">check_circle</span>
+              </div>
+              <p class="font-code-sm text-code-sm text-on-surface-variant">
+                面向纯钢琴的 Transformer + Semi-CRF，CPU 本地运行，速度较慢但音符边界更准确。
+              </p>
+              <p v-if="!transcription.engineStatus.high_quality_available" class="mt-2 text-xs text-amber-300">
+                {{ transcription.engineStatus.high_quality_error ?? '当前安装包未包含高质量组件' }}
+              </p>
+              <input
+                v-model="transcription.engine"
+                type="radio"
+                name="transcription-engine"
+                value="high_quality"
+                class="sr-only"
+                :disabled="!transcription.engineStatus.high_quality_available"
+              />
+            </label>
+          </div>
+        </section>
+
+        <!-- 识别预设（Basic Pitch） -->
+        <section v-if="transcription.engine === 'fast'" class="tech-border rounded-lg bg-surface-container-low p-6">
           <h3 class="mb-6 flex items-center gap-2 border-b border-outline-variant pb-4 font-body-lg text-body-lg text-primary">
             <span class="material-symbols-outlined text-[20px]">tune</span>
             识别预设

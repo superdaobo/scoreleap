@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use scoreleap_core::{AppState, CoreError};
 use scoreleap_sequence::PlaybackState;
 use scoreleap_transcription::{
-    TranscriptionError, TranscriptionErrorCode, TranscriptionEvent, TranscriptionOptions,
-    TranscriptionService, WorkerSpec,
+    TranscriptionEngine, TranscriptionError, TranscriptionErrorCode, TranscriptionEvent,
+    TranscriptionOptions, TranscriptionService, TranscriptionWorkers, WorkerSpec,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -203,6 +203,7 @@ fn get_audio_file_info(path: String) -> Result<scoreleap_core::AudioFileInfo, Co
 struct TxState(Mutex<Option<TranscriptionService>>);
 
 const NATIVE_WORKER_RESOURCE: &str = "scoreleap-transcriber/scoreleap-transcriber-native.exe";
+const TRANSKUN_WORKER_RESOURCE: &str = "scoreleap-transkun/scoreleap-transkun-worker.exe";
 
 /// 原生 sidecar 路径解析：发布版仅接受资源目录，开发版允许显式环境变量覆盖。
 fn resolve_worker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
@@ -210,6 +211,14 @@ fn resolve_worker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
         app,
         std::path::Path::new(NATIVE_WORKER_RESOURCE),
         "SCORELEAP_WORKER_PATH",
+    )
+}
+
+fn resolve_transkun_worker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    model::resolve_packaged_file(
+        app,
+        std::path::Path::new(TRANSKUN_WORKER_RESOURCE),
+        "SCORELEAP_TRANSKUN_WORKER_PATH",
     )
 }
 
@@ -221,42 +230,112 @@ fn resolve_onnx_runtime_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     )
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+struct TranscriptionEngineStatusView {
+    fast_available: bool,
+    high_quality_available: bool,
+    high_quality_error: Option<String>,
+}
+
+fn resolve_engine_worker(
+    app: &AppHandle,
+    engine: TranscriptionEngine,
+) -> Result<WorkerSpec, TranscriptionError> {
+    match engine {
+        TranscriptionEngine::Fast => {
+            let worker = resolve_worker_path(app).ok_or_else(|| {
+                TranscriptionError::new(
+                    TranscriptionErrorCode::WorkerNotFound,
+                    "未找到原生转录组件，请重新安装完整版本",
+                )
+            })?;
+            let runtime = resolve_onnx_runtime_path(app).ok_or_else(|| {
+                TranscriptionError::new(
+                    TranscriptionErrorCode::RuntimeMissing,
+                    "未找到 ONNX Runtime，请重新安装完整版本",
+                )
+            })?;
+            let model_path = model::resolve_active_model(app).map_err(|error| {
+                let code = match &error {
+                    scoreleap_model_manager::ModelManagerError::CacheMissing(_, _) => {
+                        TranscriptionErrorCode::ModelDownloadRequired
+                    }
+                    _ => TranscriptionErrorCode::ModelLoadFailed,
+                };
+                TranscriptionError::new(code, error.to_string())
+            })?;
+            Ok(WorkerSpec::basic_pitch(
+                worker.to_string_lossy().to_string(),
+                vec![],
+                model_path,
+                Some(runtime),
+            ))
+        }
+        TranscriptionEngine::HighQuality => {
+            let worker = resolve_transkun_worker_path(app).ok_or_else(|| {
+                TranscriptionError::new(
+                    TranscriptionErrorCode::EngineUnavailable,
+                    "高质量钢琴转录组件未包含在当前安装包中，请重新安装完整版",
+                )
+            })?;
+            Ok(WorkerSpec::self_contained(
+                worker.to_string_lossy().to_string(),
+                vec![],
+            ))
+        }
+    }
+}
+
+fn transcription_engine_status(app: &AppHandle) -> TranscriptionEngineStatusView {
+    let fast_available = resolve_engine_worker(app, TranscriptionEngine::Fast).is_ok();
+    let high_quality = resolve_engine_worker(app, TranscriptionEngine::HighQuality);
+    TranscriptionEngineStatusView {
+        fast_available,
+        high_quality_available: high_quality.is_ok(),
+        high_quality_error: high_quality.err().map(|error| error.message),
+    }
+}
+
 fn get_or_init_transcription(
     app: &AppHandle,
     tx: &State<'_, TxState>,
+    requested_engine: TranscriptionEngine,
 ) -> Result<TranscriptionService, TranscriptionError> {
     let mut guard = tx.0.lock().unwrap();
     if let Some(svc) = guard.as_ref() {
         match svc.status() {
             Some(job) if job.status.is_terminal() => {
-                // 终态任务后重建服务，以便下一次启动读取新激活的模型。
+                // 终态任务后重建服务，以便下一次启动读取新激活的模型或新安装的引擎。
             }
-            _ => return Ok(svc.clone()),
+            Some(_) => return Ok(svc.clone()),
+            None if svc.supports_engine(requested_engine) => return Ok(svc.clone()),
+            None => {}
         }
     }
-    // 解析 Worker 路径
-    let worker_program = resolve_worker_path(app).ok_or_else(|| {
-        TranscriptionError::new(
-            scoreleap_transcription::TranscriptionErrorCode::WorkerNotFound,
-            "未找到原生转录组件，请重新安装完整版本",
-        )
-    })?;
-    let runtime_path = resolve_onnx_runtime_path(app).ok_or_else(|| {
-        TranscriptionError::new(
-            TranscriptionErrorCode::RuntimeMissing,
-            "未找到 ONNX Runtime，请重新安装完整版本",
-        )
-    })?;
-    let model_path = model::resolve_active_model(app).map_err(|error| {
-        let code = match &error {
-            scoreleap_model_manager::ModelManagerError::CacheMissing(_, _) => {
-                TranscriptionErrorCode::ModelDownloadRequired
-            }
-            _ => TranscriptionErrorCode::ModelLoadFailed,
-        };
-        TranscriptionError::new(code, error.to_string())
-    })?;
-    tracing::info!("转录 Worker: {}", worker_program.display());
+
+    // 请求的引擎必须给出精确错误；另一个引擎属于可选能力，解析失败不阻止本次任务。
+    let requested_worker = resolve_engine_worker(app, requested_engine)?;
+    let mut workers = TranscriptionWorkers::default();
+    match requested_engine {
+        TranscriptionEngine::Fast => workers.fast = Some(requested_worker),
+        TranscriptionEngine::HighQuality => workers.high_quality = Some(requested_worker),
+    }
+    let other_engine = match requested_engine {
+        TranscriptionEngine::Fast => TranscriptionEngine::HighQuality,
+        TranscriptionEngine::HighQuality => TranscriptionEngine::Fast,
+    };
+    if let Ok(worker) = resolve_engine_worker(app, other_engine) {
+        match other_engine {
+            TranscriptionEngine::Fast => workers.fast = Some(worker),
+            TranscriptionEngine::HighQuality => workers.high_quality = Some(worker),
+        }
+    }
+    tracing::info!(
+        engine = requested_engine.as_str(),
+        fast_available = workers.fast.is_some(),
+        high_quality_available = workers.high_quality.is_some(),
+        "初始化转录服务"
+    );
     let data_dir = app
         .path()
         .app_data_dir()
@@ -312,17 +391,7 @@ fn get_or_init_transcription(
             .map_err(|e| e.to_string())
         },
     );
-    let svc = TranscriptionService::new(
-        data_dir,
-        WorkerSpec {
-            program: worker_program.to_string_lossy().to_string(),
-            args: vec![],
-            model_path,
-            onnx_runtime_path: Some(runtime_path),
-        },
-        on_event,
-        importer,
-    );
+    let svc = TranscriptionService::new_with_workers(data_dir, workers, on_event, importer);
     *guard = Some(svc.clone());
     Ok(svc)
 }
@@ -337,8 +406,13 @@ fn start_audio_transcription(
     options: TranscriptionOptions,
 ) -> Result<String, TranscriptionError> {
     let _ = &state;
-    let svc = get_or_init_transcription(&app, &tx)?;
+    let svc = get_or_init_transcription(&app, &tx, options.engine)?;
     svc.start_with_options(&path, options)
+}
+
+#[tauri::command]
+fn get_transcription_engine_status(app: AppHandle) -> TranscriptionEngineStatusView {
+    transcription_engine_status(&app)
 }
 
 #[tauri::command]
@@ -520,6 +594,7 @@ pub fn run() {
             check_foreground,
             list_keymap,
             start_audio_transcription,
+            get_transcription_engine_status,
             cancel_audio_transcription,
             get_audio_transcription_status,
             get_audio_file_info,
@@ -535,19 +610,29 @@ pub fn run() {
 
 #[cfg(test)]
 mod native_resource_contract_tests {
-    use super::NATIVE_WORKER_RESOURCE;
+    use super::{NATIVE_WORKER_RESOURCE, TRANSKUN_WORKER_RESOURCE};
     use std::path::Path;
 
     #[test]
-    fn worker_resource_name_matches_native_packaging_contract() {
-        let path = Path::new(NATIVE_WORKER_RESOURCE);
+    fn worker_resource_names_match_packaging_contracts() {
+        let native = Path::new(NATIVE_WORKER_RESOURCE);
         assert_eq!(
-            path.file_name().and_then(|value| value.to_str()),
+            native.file_name().and_then(|value| value.to_str()),
             Some("scoreleap-transcriber-native.exe")
         );
         assert_eq!(
-            path.parent().and_then(|value| value.to_str()),
+            native.parent().and_then(|value| value.to_str()),
             Some("scoreleap-transcriber")
+        );
+
+        let transkun = Path::new(TRANSKUN_WORKER_RESOURCE);
+        assert_eq!(
+            transkun.file_name().and_then(|value| value.to_str()),
+            Some("scoreleap-transkun-worker.exe")
+        );
+        assert_eq!(
+            transkun.parent().and_then(|value| value.to_str()),
+            Some("scoreleap-transkun")
         );
     }
 }

@@ -32,6 +32,7 @@
     "resources": [
       "resources/scoreleap-model/",
       "resources/scoreleap-transcriber/",
+      "resources/scoreleap-transkun/",
       "resources/game-profiles/"
     ],
     "icon": [
