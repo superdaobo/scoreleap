@@ -1,11 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files
 
-root = Path(__file__).resolve().parent
+# PyInstaller 6.21 执行 spec 时不注入 __file__，用 sys.argv[0]（spec 路径）
+root = Path(sys.argv[0]).resolve().parent
 worker = root / "scoreleap_transkun_worker.py"
 transkun_data = collect_data_files("transkun", includes=["pretrained/*"])
+
+# Transkun 用 TorchScript（torch.jit.script）编译模型，运行期必须能读取原始 .py 源码。
+# PyInstaller 会把模块编译进 PYZ，inspect.getsource 失效；这里把整个 transkun 包
+# 以源码形式复制进 sidecar，worker 启动时优先 sys.path 加载。
+import transkun  # noqa: E402
+_transkun_src = Path(transkun.__file__).resolve().parent
+transkun_data += [(str(_transkun_src), "transkun_src")]
 
 analysis = Analysis(
     [str(worker)],

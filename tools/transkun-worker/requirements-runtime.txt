@@ -8,3 +8,4 @@ pretty-midi==0.2.11
 mir-eval==0.8.2
 miniaudio==1.71
 pyinstaller==6.21.0
+soundfile==0.13.1

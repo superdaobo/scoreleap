@@ -108,16 +108,22 @@ def validate_input(path: Path) -> None:
 def decode_audio(path: Path) -> tuple[Any, float]:
     try:
         with contextlib.redirect_stdout(sys.stderr):
-            import miniaudio
             import numpy as np
+            import soundfile as sf
 
-            decoded = miniaudio.decode_file(
-                str(path),
-                output_format=miniaudio.SampleFormat.FLOAT32,
-                nchannels=1,
-                sample_rate=TARGET_SAMPLE_RATE,
-            )
-            audio = np.asarray(decoded.samples, dtype=np.float32).reshape(-1, 1)
+            # libsndfile 支持 wav/flac/mp3/m4a 等常见格式
+            data, sr = sf.read(str(path), dtype="float32", always_2d=True)
+            if data.shape[0] == 0:
+                fail("AUDIO_DECODE_FAILED", "音频没有可用采样", 4)
+            if sr != TARGET_SAMPLE_RATE:
+                import torch
+                import torchaudio.functional as F
+
+                waveform = torch.from_numpy(data.T)  # (channels, samples)
+                resampled = F.resample(waveform, sr, TARGET_SAMPLE_RATE)
+                audio = resampled[0:1].T.numpy()  # 单声道 (samples, 1)
+            else:
+                audio = data[:, :1].astype(np.float32, copy=False)
     except Exception as error:  # noqa: BLE001 - 转换为稳定 Worker 错误契约
         fail("AUDIO_DECODE_FAILED", f"音频解码失败: {error}", 4)
 
@@ -146,8 +152,33 @@ def bundled_model_paths() -> tuple[Path, Path]:
     return weight_path, config_path
 
 
+def _load_transkun_from_source() -> None:
+    """PyInstaller 打包后 transkun 编译进 PYZ，TorchScript 无法读取 .py 源码。
+    这里直接从打包的 transkun_src 目录用 importlib 加载整个 transkun 包，
+    使其 __file__/__path__ 指向真实源码，保证 torch.jit.script 可访问源码。"""
+    import importlib.util
+
+    _bundle = Path(getattr(sys, "_MEIPASS", Path(sys.argv[0]).resolve().parent))
+    for _candidate in (
+        _bundle / "transkun_src",
+        _bundle.parent / "transkun_src",
+        _bundle / "_internal" / "transkun_src",
+    ):
+        init_py = _candidate / "__init__.py"
+        if init_py.is_file():
+            _spec = importlib.util.spec_from_file_location(
+                "transkun", init_py, submodule_search_locations=[str(_candidate)]
+            )
+            if _spec is not None and _spec.loader is not None:
+                _mod = importlib.util.module_from_spec(_spec)
+                sys.modules["transkun"] = _mod
+                _spec.loader.exec_module(_mod)
+            return
+
+
 def load_model() -> tuple[Any, Any, Any, str]:
     weight_path, config_path = bundled_model_paths()
+    _load_transkun_from_source()
     try:
         # 部分上游模块会打印诊断信息；stdout 必须保持纯 JSONL。
         with contextlib.redirect_stdout(sys.stderr):
