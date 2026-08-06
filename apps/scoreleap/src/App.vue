@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { getVersion } from '@tauri-apps/api/app'
 import { getCrashFlag, emergencyStop } from './services/api'
 import { usePlaybackStore } from './stores/playbackStore'
 
 const route = useRoute()
 const crashed = ref(false)
+const appVersion = ref('')
 const playback = usePlaybackStore()
 
 interface NavItem {
@@ -64,6 +66,11 @@ onMounted(async () => {
   } catch {
     crashed.value = false
   }
+  try {
+    appVersion.value = await getVersion()
+  } catch {
+    appVersion.value = '0.3.1'
+  }
 })
 </script>
 
@@ -111,7 +118,7 @@ onMounted(async () => {
         </button>
         <span
           class="hidden rounded border border-outline-variant bg-surface-container-high px-2 py-1 font-code-sm text-code-sm text-on-surface-variant lg:inline"
-          >v0.3.0</span
+          >v{{ appVersion || '0.3.1' }}</span
         >
       </div>
     </header>

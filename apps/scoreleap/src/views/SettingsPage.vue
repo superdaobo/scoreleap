@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { getVersion } from '@tauri-apps/api/app'
 import { useRouter } from 'vue-router'
 import { useSettingsStore, type LogLevel } from '../stores/settingsStore'
 import { useTranscriptionStore } from '../stores/transcriptionStore'
@@ -43,6 +44,7 @@ async function runDiagnostics(): Promise<void> {
 }
 
 const showRiskModal = ref(false)
+const appVersion = ref('')
 const reAgree = ref(false)
 
 onMounted(() => {
@@ -50,6 +52,9 @@ onMounted(() => {
   void modelStore.subscribe()
   void modelStore.load()
   void transcription.loadEngineStatus()
+  getVersion()
+    .then((v) => (appVersion.value = v))
+    .catch(() => (appVersion.value = '0.3.1'))
 })
 
 const logLevels: { value: LogLevel; label: string }[] = [
@@ -411,7 +416,7 @@ async function confirmReAgree(): Promise<void> {
             <dl class="mt-3 space-y-2 font-code-sm text-code-sm">
               <div class="flex gap-2">
                 <dt class="w-16 text-on-surface-variant">版本</dt>
-                <dd class="text-on-surface">0.3.0</dd>
+                <dd class="text-on-surface">{{ appVersion || '0.3.1' }}</dd>
               </div>
               <div class="flex gap-2">
                 <dt class="w-16 text-on-surface-variant">许可证</dt>
