@@ -452,6 +452,11 @@ pub fn pause_playback(state: &AppState) -> Result<(), CoreError> {
     with_scheduler(state, |h| h.command(PlaybackCommand::Pause))
 }
 
+/// 跳转到指定逻辑时间（微秒）。Playing/Paused 状态下生效。
+pub fn seek_playback(state: &AppState, position_us: i64) -> Result<(), CoreError> {
+    with_scheduler(state, |h| h.command(PlaybackCommand::Seek { position_us }))
+}
+
 /// 继续。
 pub fn resume_playback(state: &AppState) -> Result<(), CoreError> {
     with_scheduler(state, |h| h.command(PlaybackCommand::Resume))

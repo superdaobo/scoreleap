@@ -399,6 +399,12 @@ impl Scheduler {
                             self.emergency_stop();
                             self.begin_countdown();
                         }
+                        Ok(PlaybackCommand::Seek { position_us }) => {
+                            self.seek_to(position_us);
+                            if let Some(s) = &mut self.session {
+                                s.paused_elapsed_us = position_us.clamp(0, self.seq.duration_us);
+                            }
+                        }
                         Ok(_) => {}
                         Err(_) => {
                             self.emergency_stop();
@@ -514,6 +520,9 @@ impl Scheduler {
                     PlaybackCommand::Start => {
                         pending = Some(PlaybackCommand::Start);
                     }
+                    PlaybackCommand::Seek { position_us } => {
+                        pending = Some(PlaybackCommand::Seek { position_us });
+                    }
                 }
             }
             if let Some(cmd) = pending.take() {
@@ -529,6 +538,9 @@ impl Scheduler {
                         self.state = PlaybackState::Paused;
                         self.emit(SchedulerEvent::State(PlaybackState::Paused));
                         return;
+                    }
+                    PlaybackCommand::Seek { position_us } => {
+                        self.seek_to(position_us);
                     }
                     PlaybackCommand::Stop | PlaybackCommand::EmergencyStop => {
                         self.emergency_stop();
@@ -639,6 +651,29 @@ impl Scheduler {
         true
     }
 
+    /// 跳转到指定逻辑时间：释放全部按键，重算动作指针，播放继续。
+    fn seek_to(&mut self, position_us: i64) {
+        let position = position_us.clamp(0, self.seq.duration_us);
+        let _ = self.backend.release_all();
+        let next_idx = self
+            .seq
+            .actions
+            .iter()
+            .position(|a| a.at_us() >= position)
+            .unwrap_or(self.seq.actions.len());
+        if let Some(s) = &mut self.session {
+            s.action_idx = next_idx;
+            s.origin_wall_us = self.clock.now_us() - position;
+            s.logically_pressed.clear();
+            s.paused_elapsed_us = position;
+        }
+        self.emit(SchedulerEvent::Progress(PlaybackProgress {
+            position_us: position,
+            current_note: None,
+            pressed_keys: 0,
+        }));
+    }
+
     fn emergency_stop(&mut self) {
         if let Err(e) = self.backend.release_all() {
             self.emit(SchedulerEvent::Error(format!("释放按键失败: {e}")));
@@ -675,6 +710,27 @@ mod tests {
                 note_count: 0,
                 transpose_semitones: 0,
             },
+        }
+    }
+
+    /// 可推进的测试时钟。
+    struct TestClock {
+        now: std::sync::atomic::AtomicI64,
+    }
+    impl TestClock {
+        fn new(start: i64) -> Self {
+            Self { now: std::sync::atomic::AtomicI64::new(start) }
+        }
+        fn advance(&self, us: i64) {
+            self.now.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    impl Clock for TestClock {
+        fn now_us(&self) -> i64 {
+            self.now.load(std::sync::atomic::Ordering::Relaxed)
+        }
+        fn sleep_until(&self, _target_us: i64) {
+            // 测试时钟：不真实睡眠
         }
     }
 
@@ -911,6 +967,168 @@ mod tests {
                 _ => {}
             }
         }
+        handle.shutdown();
+    }
+
+#[test]
+    fn seek_during_playback_repositions_and_releases_keys() {
+        let k1 = KeyCode::scan(0x1E);
+        let k2 = KeyCode::scan(0x1F);
+        // 0s 按下 k1，3s 抬起 k1，6s 按下 k2，9s 抬起 k2
+        let seq = seq_with(vec![
+            (0, k1, true),
+            (3_000_000, k1, false),
+            (6_000_000, k2, true),
+            (9_000_000, k2, false),
+        ]);
+        let clock = Arc::new(TestClock::new(0));
+        let backend = MockInputBackend::new();
+        let handle = Scheduler::spawn(seq, clock.clone(), Box::new(backend.clone()));
+        handle.command(PlaybackCommand::Start).unwrap();
+        // 等待进入 Countdown（begin_countdown 已设置 deadline），再推进时钟完成倒计时
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(ev) = handle.try_recv_event() {
+                if matches!(ev, SchedulerEvent::State(PlaybackState::Countdown)) {
+                    break;
+                }
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("未进入 Countdown");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        clock.advance(3_000_000); // 完成 3 秒倒计时
+        // 等待进入 Playing 且第一个动作已执行（k1 按下）
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(ev) = handle.try_recv_event() {
+                if matches!(ev, SchedulerEvent::State(PlaybackState::Playing)) {
+                    break;
+                }
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("未进入 Playing");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        // 推进时钟 1s（k1 仍按住），然后 seek 到 7s（k2 按下期间之后、k2 抬起前）
+        clock.advance(1_000_000);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        handle.command(PlaybackCommand::Seek { position_us: 7_000_000 }).unwrap();
+        // 等待 seek 的 Progress 事件
+        let mut saw_seek_progress = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            if let Some(ev) = handle.try_recv_event() {
+                if let SchedulerEvent::Progress(progress) = ev {
+                    if progress.position_us == 7_000_000 {
+                        saw_seek_progress = true;
+                        break;
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(saw_seek_progress, "未收到 seek 后的进度事件");
+        // 释放了全部按键（k1 不再按下）
+        assert!(backend.pressed().is_empty(), "seek 后应释放全部按键");
+        // 推进到 9s（k2 抬起应执行），播放正常结束
+        clock.advance(2_500_000);
+        let finished = run_to_finish(&handle);
+        assert!(
+            finished.iter().any(|e| matches!(e, SchedulerEvent::State(PlaybackState::Finished))),
+            "seek 后应继续播放至结束"
+        );
+        handle.shutdown();
+    }
+
+    #[test]
+    fn seek_while_paused_keeps_paused_at_new_position() {
+        let k1 = KeyCode::scan(0x1E);
+        let seq = seq_with(vec![(0, k1, true), (4_000_000, k1, false)]);
+        let clock = Arc::new(TestClock::new(0));
+        let backend = MockInputBackend::new();
+        let handle = Scheduler::spawn(seq, clock.clone(), Box::new(backend.clone()));
+        handle.command(PlaybackCommand::Start).unwrap();
+        // 等待进入 Countdown 再推进时钟
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(ev) = handle.try_recv_event() {
+                if matches!(ev, SchedulerEvent::State(PlaybackState::Countdown)) {
+                    break;
+                }
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("未进入 Countdown");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        clock.advance(3_000_000); // 完成 3 秒倒计时
+        // 进入 Playing
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(ev) = handle.try_recv_event() {
+                if matches!(ev, SchedulerEvent::State(PlaybackState::Playing)) {
+                    break;
+                }
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("未进入 Playing");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        clock.advance(1_000_000);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        // 暂停，然后 seek 到 3s
+        handle.command(PlaybackCommand::Pause).unwrap();
+        let mut paused = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            if let Some(ev) = handle.try_recv_event() {
+                if matches!(ev, SchedulerEvent::State(PlaybackState::Paused)) {
+                    paused = true;
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(paused, "未进入 Paused");
+        handle.command(PlaybackCommand::Seek { position_us: 3_000_000 }).unwrap();
+        // 暂停态 seek：收到位置 3s 的 Progress，且状态仍 Paused
+        let mut saw_seek_progress = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            if let Some(ev) = handle.try_recv_event() {
+                if let SchedulerEvent::Progress(progress) = ev {
+                    if progress.position_us == 3_000_000 {
+                        saw_seek_progress = true;
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(saw_seek_progress, "暂停态 seek 未收到进度事件");
+        // 恢复：从 3s 继续，4s 的抬起动作应执行并结束
+        handle.command(PlaybackCommand::Resume).unwrap();
+        let mut saw_resume_progress = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if let Some(ev) = handle.try_recv_event() {
+                if let SchedulerEvent::Progress(progress) = ev {
+                    if progress.position_us >= 3_000_000 && progress.position_us > 0 {
+                        saw_resume_progress = true;
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        clock.advance(2_000_000);
+        let finished = run_to_finish(&handle);
+        assert!(
+            finished.iter().any(|e| matches!(e, SchedulerEvent::State(PlaybackState::Finished))),
+            "暂停 seek 后恢复应能播放至结束"
+        );
         handle.shutdown();
     }
 }

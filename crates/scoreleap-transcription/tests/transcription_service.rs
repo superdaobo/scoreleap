@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use scoreleap_transcription::{
-    JobStatus, TranscriptionErrorCode, TranscriptionEvent, TranscriptionOptions,
-    TranscriptionPreset, TranscriptionService, WorkerSpec,
+    JobStatus, TranscriptionEngine, TranscriptionErrorCode, TranscriptionEvent,
+    TranscriptionOptions, TranscriptionPreset, TranscriptionService, TranscriptionWorkers,
+    WorkerSpec,
 };
 
 const FAKE_WORKER_PS1: &str = r#"
@@ -64,24 +65,82 @@ fn setup(worker_ps1: &str) -> Harness {
     let im = imports.clone();
     let service = TranscriptionService::new(
         tmp.clone(),
-        WorkerSpec {
-            program: "powershell".into(),
-            args: vec![
+        WorkerSpec::basic_pitch(
+            "powershell",
+            vec![
                 "-NoProfile".into(),
                 "-ExecutionPolicy".into(),
                 "Bypass".into(),
                 "-File".into(),
                 worker_file.to_string_lossy().to_string(),
             ],
-            model_path: model_file,
-            onnx_runtime_path: None,
-        },
+            model_file,
+            None,
+        ),
         Arc::new(move |e| ev.lock().unwrap().push(e)),
         Arc::new(move |midi, name| {
             im.lock()
                 .unwrap()
                 .push((midi.to_string(), name.to_string()));
             Ok("doc-transcribed".into())
+        }),
+    );
+    Harness {
+        service,
+        events,
+        imports,
+        data_dir: tmp,
+    }
+}
+
+fn setup_high_quality() -> Harness {
+    let worker_ps1 = r#"
+param($command)
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+function Emit($obj) { Write-Output ($obj | ConvertTo-Json -Compress -Depth 4) }
+$inputPath = $args[[Array]::IndexOf($args, '--input') + 1]
+$midiPath = $args[[Array]::IndexOf($args, '--output-midi') + 1]
+$metadataPath = $args[[Array]::IndexOf($args, '--output-metadata') + 1]
+$requestId = $args[[Array]::IndexOf($args, '--request-id') + 1]
+if ([Array]::IndexOf($args, '--model') -ge 0 -or [Array]::IndexOf($args, '--onnx-runtime') -ge 0) {
+    Emit @{schema_version=1; type='error'; request_id=$requestId; code='WORKER_PROTOCOL_ERROR'; message='self-contained worker received external runtime args'}
+    exit 2
+}
+Emit @{schema_version=1; type='ready'; request_id=$requestId; worker_version='transkun-test'}
+Emit @{schema_version=1; type='stage'; request_id=$requestId; stage='transcribing'; message='hq'}
+[System.IO.File]::WriteAllBytes($midiPath, [byte[]]@(0x4D,0x54,0x68,0x64,0x00,0x00,0x00,0x06,0x00,0x00,0x00,0x01,0x00,0x60,0x4D,0x54,0x72,0x6B,0x00,0x00,0x00,0x0B,0x00,0x90,0x3C,0x64,0x60,0x80,0x3C,0x00,0x00,0xFF,0x2F,0x00))
+[System.IO.File]::WriteAllText($metadataPath, '{}')
+Emit @{schema_version=1; type='result'; request_id=$requestId; midi_path=$midiPath; metadata_path=$metadataPath; note_count=1; elapsed_ms=200}
+exit 0
+"#;
+    let tmp = std::env::temp_dir().join(format!("scoreleap-tx-hq-test-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let worker_file = tmp.join("fake_transkun_worker.ps1");
+    std::fs::write(&worker_file, worker_ps1).unwrap();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let imports = Arc::new(Mutex::new(Vec::new()));
+    let ev = events.clone();
+    let im = imports.clone();
+    let worker = WorkerSpec::self_contained(
+        "powershell",
+        vec![
+            "-NoProfile".into(),
+            "-ExecutionPolicy".into(),
+            "Bypass".into(),
+            "-File".into(),
+            worker_file.to_string_lossy().to_string(),
+        ],
+    );
+    let service = TranscriptionService::new_with_workers(
+        tmp.clone(),
+        TranscriptionWorkers {
+            fast: None,
+            high_quality: Some(worker),
+        },
+        Arc::new(move |event| ev.lock().unwrap().push(event)),
+        Arc::new(move |midi, name| {
+            im.lock().unwrap().push((midi.to_string(), name.to_string()));
+            Ok("doc-high-quality".into())
         }),
     );
     Harness {
@@ -148,6 +207,42 @@ fn success_flow_imports_and_completes() {
     assert_eq!(job.note_count, Some(3));
     assert_eq!(job.result_doc_id.as_deref(), Some("doc-transcribed"));
 
+    std::fs::remove_dir_all(&h.data_dir).ok();
+}
+
+#[test]
+fn high_quality_self_contained_worker_runs_without_model_or_onnx_arguments() {
+    let h = setup_high_quality();
+    let input = make_input(&h.data_dir, "piano.wav");
+    h.service
+        .start_with_options(
+            &input,
+            TranscriptionOptions {
+                engine: TranscriptionEngine::HighQuality,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(wait_terminal(&h.service, 20), Some(JobStatus::Completed));
+    assert_eq!(h.imports.lock().unwrap()[0].1, "piano（音频转录）");
+    std::fs::remove_dir_all(&h.data_dir).ok();
+}
+
+#[test]
+fn unavailable_engine_returns_structured_error() {
+    let h = setup(FAKE_WORKER_PS1);
+    let input = make_input(&h.data_dir, "piano.wav");
+    let error = h
+        .service
+        .start_with_options(
+            &input,
+            TranscriptionOptions {
+                engine: TranscriptionEngine::HighQuality,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert_eq!(error.code, TranscriptionErrorCode::EngineUnavailable);
     std::fs::remove_dir_all(&h.data_dir).ok();
 }
 
@@ -232,6 +327,7 @@ fn native_cli_preset_and_threshold_flags_match_runtime_contract() {
                 onset_threshold: Some(0.7),
                 frame_threshold: Some(0.55),
                 minimum_note_ms: Some(90),
+                ..Default::default()
             },
         )
         .unwrap();

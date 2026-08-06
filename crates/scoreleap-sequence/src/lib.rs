@@ -103,6 +103,8 @@ pub enum PlaybackCommand {
     Resume,
     Stop,
     EmergencyStop,
+    /// 跳转到指定逻辑时间（微秒）。Playing/Paused 状态下均可。
+    Seek { position_us: i64 },
 }
 
 /// 播放进度。

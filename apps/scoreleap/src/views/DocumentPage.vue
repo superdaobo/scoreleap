@@ -31,101 +31,102 @@ onMounted(async () => {
 
 <template>
   <div>
-    <RouterLink to="/" class="text-sm text-indigo-400 hover:text-indigo-300"
-      >← 返回曲谱库</RouterLink
+    <RouterLink
+      to="/"
+      class="flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary"
     >
+      <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+      返回曲谱库
+    </RouterLink>
 
-    <div v-if="loading" class="py-20 text-center text-slate-500">加载中…</div>
+    <div v-if="loading" class="py-20 text-center font-code-sm text-code-sm text-on-surface-variant">
+      LOADING_SYSTEM...
+    </div>
 
     <div v-else-if="!doc" class="py-20 text-center">
-      <p class="text-slate-400">未找到曲谱信息，可能已被移除。</p>
+      <p class="text-on-surface-variant">未找到曲谱信息，可能已被移除。</p>
       <RouterLink
         to="/"
-        class="mt-4 inline-block rounded-lg bg-indigo-500 px-4 py-2 text-sm text-white"
+        class="mt-4 inline-block rounded bg-primary-container px-4 py-2 font-label-caps text-label-caps text-on-primary-container hover:bg-primary-fixed"
         >返回曲谱库</RouterLink
       >
     </div>
 
     <template v-else>
+      <!-- 错误提示条 -->
       <div
         v-if="store.error"
-        class="mt-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+        class="mt-4 flex items-center gap-3 border border-error bg-error-container/20 px-4 py-3 text-error"
       >
-        <span>⚠️</span><span class="flex-1">{{ store.error }}</span>
+        <span class="material-symbols-outlined">error</span>
+        <span class="flex-1 font-code-sm text-code-sm">{{ store.error }}</span>
       </div>
 
       <div class="mt-4 grid gap-6 lg:grid-cols-[1fr_320px]">
         <!-- 基本信息 + 轨道列表 -->
-        <section
-          class="rounded-xl border border-slate-800 bg-slate-800/40 p-6"
-        >
-          <h1 class="text-xl font-bold text-white">{{ doc.name }}</h1>
+        <section class="bento-item rounded-xl p-6">
+          <h1 class="font-display text-[26px] text-on-surface">{{ doc.name }}</h1>
           <dl class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div>
-              <dt class="text-xs text-slate-500">格式</dt>
-              <dd class="mt-1 font-mono text-sm text-slate-200">
-                {{ doc.format }}
-              </dd>
+            <div class="rounded border border-outline-variant bg-surface p-4">
+              <dt class="font-label-caps text-label-caps text-on-surface-variant">FORMAT</dt>
+              <dd class="mt-1 font-code-sm text-code-sm text-primary">{{ doc.format }}</dd>
             </div>
-            <div>
-              <dt class="text-xs text-slate-500">BPM 范围</dt>
-              <dd class="mt-1 font-mono text-sm text-slate-200">
+            <div class="rounded border border-outline-variant bg-surface p-4">
+              <dt class="font-label-caps text-label-caps text-on-surface-variant">BPM RANGE</dt>
+              <dd class="mt-1 font-code-sm text-code-sm text-primary">
                 {{ doc.bpm_range[0].toFixed(0) }} – {{ doc.bpm_range[1].toFixed(0) }}
               </dd>
             </div>
-            <div>
-              <dt class="text-xs text-slate-500">音符数</dt>
-              <dd class="mt-1 font-mono text-sm text-slate-200">
+            <div class="rounded border border-outline-variant bg-surface p-4">
+              <dt class="font-label-caps text-label-caps text-on-surface-variant">NOTES</dt>
+              <dd class="mt-1 font-code-sm text-code-sm text-primary">
                 {{ doc.note_count.toLocaleString() }}
               </dd>
             </div>
-            <div>
-              <dt class="text-xs text-slate-500">时长</dt>
-              <dd class="mt-1 font-mono text-sm text-slate-200">
+            <div class="rounded border border-outline-variant bg-surface p-4">
+              <dt class="font-label-caps text-label-caps text-on-surface-variant">DURATION</dt>
+              <dd class="mt-1 font-code-sm text-code-sm text-primary">
                 {{ formatDuration(doc.duration_ms) }}
               </dd>
             </div>
           </dl>
 
           <div class="mt-6">
-            <div class="mb-3 flex items-center justify-between">
-              <h2 class="text-sm font-medium text-slate-300">
+            <div class="mb-3 flex items-center justify-between border-b border-outline-variant pb-3">
+              <h2 class="font-body-lg text-body-lg text-primary flex items-center gap-2">
+                <span class="material-symbols-outlined text-[20px]">queue_music</span>
                 轨道（{{ store.tracks.length }}）
               </h2>
-              <div class="flex gap-2 text-xs">
+              <div class="flex gap-2 font-code-sm text-code-sm">
                 <button
                   type="button"
-                  class="rounded px-2 py-1 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+                  class="px-2 py-1 text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-primary"
                   @click="store.setAllTracks(docId, true)"
-                >
-                  全选
-                </button>
+                >全选</button>
                 <button
                   type="button"
-                  class="rounded px-2 py-1 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+                  class="px-2 py-1 text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-primary"
                   @click="store.setAllTracks(docId, false)"
-                >
-                  全不选
-                </button>
+                >全不选</button>
               </div>
             </div>
             <ul class="space-y-2">
               <li
                 v-for="track in store.tracks"
                 :key="track.id"
-                class="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-2.5"
+                class="flex items-center gap-3 rounded border border-outline-variant bg-surface-container-lowest px-4 py-2.5"
               >
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-indigo-500"
+                  class="tech-checkbox h-4 w-4 cursor-pointer appearance-none border border-outline-variant bg-surface-container-highest"
                   :checked="store.enabledTrackIds(docId).includes(track.id)"
                   @change="store.toggleTrack(docId, track.id)"
                 />
-                <span class="flex-1 truncate text-sm text-slate-200">
-                  {{ track.name || `轨道 ${track.id + 1}` }}
+                <span class="flex-1 truncate font-code-sm text-code-sm text-on-surface">
+                  {{ track.name || `TRACK_${track.id + 1}` }}
                 </span>
-                <span class="text-xs text-slate-500"
-                  >{{ track.note_count.toLocaleString() }} 音符</span
+                <span class="font-code-sm text-code-sm text-on-surface-variant"
+                  >{{ track.note_count.toLocaleString() }} notes</span
                 >
               </li>
             </ul>
@@ -133,17 +134,17 @@ onMounted(async () => {
         </section>
 
         <!-- 进入编排 -->
-        <aside
-          class="h-fit rounded-xl border border-slate-800 bg-slate-800/40 p-6"
-        >
-          <h2 class="text-sm font-medium text-slate-300">编排</h2>
-          <p class="mt-2 text-sm text-slate-400">
-            已启用 <strong class="text-indigo-300">{{ enabledCount }}</strong> /
+        <aside class="bento-item h-fit rounded-xl p-6">
+          <h2 class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest">
+            Arrangement
+          </h2>
+          <p class="mt-3 font-code-sm text-code-sm text-on-surface-variant">
+            已启用 <strong class="text-primary">{{ enabledCount }}</strong> /
             {{ store.tracks.length }} 条轨道
           </p>
           <p
             v-if="allDisabled"
-            class="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+            class="mt-2 rounded border border-error/40 bg-error-container/20 px-3 py-2 font-code-sm text-code-sm text-error"
           >
             至少启用一条轨道才能进入编排。
           </p>
@@ -151,7 +152,7 @@ onMounted(async () => {
             v-if="allDisabled"
             type="button"
             disabled
-            class="mt-4 w-full rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2.5 text-center font-medium text-white opacity-40"
+            class="mt-4 flex w-full items-center justify-center gap-2 rounded bg-surface-variant px-4 py-2.5 font-label-caps text-label-caps text-on-surface-variant opacity-50"
           >
             进入编排 →
           </button>
@@ -162,7 +163,7 @@ onMounted(async () => {
               params: { seqId: 'pending' },
               query: { docId },
             }"
-            class="mt-4 block rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2.5 text-center font-medium text-white hover:opacity-90"
+            class="mt-4 flex w-full items-center justify-center gap-2 rounded bg-primary-container px-4 py-2.5 font-label-caps text-label-caps text-on-primary-container transition-colors hover:bg-primary-fixed"
           >
             进入编排 →
           </RouterLink>

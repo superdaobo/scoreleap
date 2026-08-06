@@ -9,6 +9,7 @@ vi.mock('../../services/api', () => ({
   startAudioTranscription: vi.fn(),
   cancelAudioTranscription: vi.fn(),
   getAudioTranscriptionStatus: vi.fn(),
+  getTranscriptionEngineStatus: vi.fn(),
 }))
 
 // 事件订阅注入：记录 handler 供测试手动触发
@@ -55,6 +56,7 @@ describe('transcriptionStore', () => {
     const store = useTranscriptionStore()
     await store.start('C:/audio.mp3')
     expect(api.startAudioTranscription).toHaveBeenCalledWith('C:/audio.mp3', {
+      engine: 'fast',
       preset: 'balanced',
       onset_threshold: null,
       frame_threshold: null,
@@ -197,11 +199,42 @@ describe('transcriptionStore', () => {
     store.minimumNoteMs = 90
     await store.start('C:/noise.flac')
     expect(api.startAudioTranscription).toHaveBeenCalledWith('C:/noise.flac', {
+      engine: 'fast',
       preset: 'noise_reduced',
       onset_threshold: 0.7,
       frame_threshold: 0.55,
       minimum_note_ms: 90,
     })
+  })
+
+  it('高质量引擎不发送 Basic Pitch 阈值', async () => {
+    vi.mocked(api.startAudioTranscription).mockResolvedValue('job-1')
+    vi.mocked(api.getAudioTranscriptionStatus).mockResolvedValue(SAMPLE_JOB)
+    const store = useTranscriptionStore()
+    store.engine = 'high_quality'
+    store.advancedEnabled = true
+    store.minimumNoteMs = 10
+    await store.start('C:/piano.wav')
+    expect(api.startAudioTranscription).toHaveBeenCalledWith('C:/piano.wav', {
+      engine: 'high_quality',
+      preset: 'balanced',
+      onset_threshold: null,
+      frame_threshold: null,
+      minimum_note_ms: null,
+    })
+  })
+
+  it('高质量组件缺失时读取状态并回退快速模式', async () => {
+    vi.mocked(api.getTranscriptionEngineStatus).mockResolvedValue({
+      fast_available: true,
+      high_quality_available: false,
+      high_quality_error: '未包含组件',
+    })
+    const store = useTranscriptionStore()
+    store.engine = 'high_quality'
+    await store.loadEngineStatus()
+    expect(store.engine).toBe('fast')
+    expect(store.engineStatus.high_quality_error).toBe('未包含组件')
   })
 
   it('拒绝超出原生运行时契约的高级参数', async () => {

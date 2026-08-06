@@ -67,35 +67,41 @@ const uipiWarning = (): string | null => {
 </script>
 
 <template>
-  <div class="max-w-4xl">
-    <h1 class="text-2xl font-bold text-white">Windows 按键测试</h1>
-    <p class="mt-2 text-sm text-slate-400">
-      验证按键注入与键位映射。建议打开记事本或游戏自由演奏页进行测试。
-    </p>
+  <div>
+    <!-- 页面标题 -->
+    <div>
+      <h1 class="font-display text-headline-md text-primary">Windows 按键测试</h1>
+      <p class="font-code-sm text-code-sm text-on-surface-variant">
+        INPUT_INJECTION_DIAGNOSTICS // 建议打开记事本或游戏自由演奏页进行测试
+      </p>
+    </div>
 
     <!-- 前台窗口与提权状态 -->
-    <section class="mt-6 rounded-xl border border-slate-800 bg-slate-800/40 p-5">
-      <div class="flex items-center justify-between">
-        <h2 class="text-sm font-medium text-slate-300">当前前台窗口</h2>
-        <span class="text-xs text-slate-500">每秒自动刷新</span>
+    <section class="bento-item mt-6 rounded-xl p-5">
+      <div class="flex items-center justify-between border-b border-outline-variant pb-3">
+        <h2 class="flex items-center gap-2 font-body-lg text-body-lg text-primary">
+          <span class="material-symbols-outlined text-[20px]">desktop_windows</span>
+          当前前台窗口
+        </h2>
+        <span class="font-code-sm text-code-sm text-on-surface-variant">每秒自动刷新</span>
       </div>
-      <p class="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-3 font-mono text-sm text-slate-400">
+      <p class="mt-3 rounded border border-outline-variant bg-surface-container-lowest px-4 py-3 font-code-sm text-code-sm text-on-surface-variant">
         {{ fg ? `${fg.title}（PID ${fg.pid}）` : '检测中…' }}
         <template v-if="fg">
           <span
-            class="ml-2 rounded px-1.5 py-0.5 text-xs"
-            :class="fg.elevated ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'"
+            class="ml-2 rounded border px-1.5 py-0.5 text-xs"
+            :class="fg.elevated ? 'border-amber-500/50 text-amber-300' : 'border-secondary text-secondary'"
           >
             {{ fg.elevated ? '管理员' : '普通权限' }}
           </span>
-          <span class="rounded bg-slate-700 px-1.5 py-0.5 text-xs">
+          <span class="ml-1 rounded border border-outline-variant px-1.5 py-0.5 text-xs">
             本程序：{{ fg.our_elevated ? '管理员' : '普通权限' }}
           </span>
         </template>
       </p>
       <p
         v-if="uipiWarning()"
-        class="mt-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+        class="mt-2 rounded border border-error bg-error-container/20 px-3 py-2 font-code-sm text-code-sm text-error"
       >
         ⚠️ {{ uipiWarning() }}
       </p>
@@ -103,43 +109,44 @@ const uipiWarning = (): string | null => {
 
     <div class="mt-4 grid gap-4 lg:grid-cols-2">
       <!-- 单键测试 -->
-      <section class="rounded-xl border border-slate-800 bg-slate-800/40 p-5">
-        <h2 class="text-sm font-medium text-slate-300">发送测试按键 A</h2>
-        <p class="mt-2 text-xs text-slate-500">
+      <section class="bento-item rounded-xl p-5">
+        <h2 class="font-body-lg text-body-lg text-primary">发送测试按键 A</h2>
+        <p class="mt-2 font-code-sm text-code-sm text-on-surface-variant">
           注入到当前前台窗口（目标窗口需已聚焦）。
         </p>
         <button
           type="button"
-          class="mt-3 rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+          class="mt-3 flex items-center gap-2 rounded bg-primary-container px-5 py-2.5 font-label-caps text-label-caps text-on-primary-container transition-colors hover:bg-primary-fixed disabled:opacity-50"
           :disabled="testing"
           @click="sendKey(0x1e, 'A')"
         >
+          <span class="material-symbols-outlined text-[18px]">keyboard</span>
           {{ testing ? '发送中…' : '发送测试按键 A' }}
         </button>
         <p
           v-if="lastHint"
-          class="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+          class="mt-3 rounded border border-secondary bg-secondary-container/20 px-3 py-2 font-code-sm text-code-sm text-secondary"
         >
           ✅ {{ lastHint }}
         </p>
         <p
           v-if="lastError"
-          class="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300"
+          class="mt-3 rounded border border-error bg-error-container/20 px-3 py-2 font-code-sm text-code-sm text-error"
         >
           ❌ {{ lastError }}
         </p>
       </section>
 
       <!-- 排查指引 -->
-      <section class="rounded-xl border border-slate-800 bg-slate-800/40 p-5">
-        <h2 class="text-sm font-medium text-slate-300">游戏无反应？排查</h2>
-        <ul class="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-400">
+      <section class="bento-item rounded-xl p-5">
+        <h2 class="font-body-lg text-body-lg text-primary">游戏无反应？排查</h2>
+        <ul class="mt-3 list-disc space-y-2 pl-5 font-code-sm text-code-sm text-on-surface-variant">
           <li>
-            先在<b class="text-slate-200">记事本</b>测试「A」：出现字母 a
+            先在<b class="text-on-surface">记事本</b>测试「A」：出现字母 a
             说明注入正常；无反应说明注入被系统阻止（看上方前台窗口权限提示）。
           </li>
           <li>
-            游戏收不到但记事本能收到：多半是<b class="text-slate-200"
+            游戏收不到但记事本能收到：多半是<b class="text-on-surface"
               >键位映射与游戏实际键位不符</b
             >——用下方「Profile 键位逐键测试」，在游戏里逐个点击，找到游戏响应的键。
           </li>
@@ -149,13 +156,12 @@ const uipiWarning = (): string | null => {
     </div>
 
     <!-- Profile 键位逐键测试 -->
-    <section class="mt-4 rounded-xl border border-slate-800 bg-slate-800/40 p-5">
-      <h2 class="text-sm font-medium text-slate-300">
+    <section class="bento-item mt-4 rounded-xl p-5">
+      <h2 class="font-body-lg text-body-lg text-primary">
         Profile 键位逐键测试（identity-v，{{ keymap.length }} 键）
       </h2>
-      <p class="mt-1 text-xs text-slate-500">
-        点击某个键 → 注入到前台窗口。在游戏乐器界面逐个点击：<b
-          class="text-slate-300"
+      <p class="mt-1 font-code-sm text-code-sm text-on-surface-variant">
+        点击某个键 → 注入到前台窗口。在游戏乐器界面逐个点击：<b class="text-on-surface"
           >游戏里能发声/亮起的键</b
         >才是正确键位；若与下方标注不一致，说明 Profile 键位需校准。
       </p>
@@ -164,18 +170,18 @@ const uipiWarning = (): string | null => {
           v-for="k in keymap"
           :key="k.note"
           type="button"
-          class="rounded-lg border px-3 py-2 font-mono text-sm transition-colors disabled:opacity-50"
+          class="rounded border px-3 py-2 font-code-sm text-code-sm transition-colors disabled:opacity-50"
           :class="
             testingKey === k.scan
-              ? 'border-indigo-400 bg-indigo-500/30 text-white'
-              : 'border-slate-700 bg-slate-900/60 text-slate-300 hover:border-indigo-500/50 hover:text-white'
+              ? 'border-primary bg-primary/30 text-primary'
+              : 'border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:border-primary hover:text-primary'
           "
           :disabled="testing"
           :title="`MIDI ${k.note} → 扫描码 0x${k.scan.toString(16)}${k.extended ? '（扩展）' : ''}`"
           @click="sendKey(k.scan, k.label)"
         >
           {{ k.label }}
-          <span class="ml-1 text-[10px] text-slate-500">{{ k.note }}</span>
+          <span class="ml-1 text-[10px] text-on-surface-variant/60">{{ k.note }}</span>
         </button>
       </div>
     </section>

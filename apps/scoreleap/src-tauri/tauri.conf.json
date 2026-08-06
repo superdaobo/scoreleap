@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ScoreLeap",
-  "version": "0.2.4",
+  "version": "0.3.1",
   "identifier": "com.superdaobo.scoreleap",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -26,13 +26,19 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "resources": [
-      "../../../game-profiles/",
-      "resources/scoreleap-model/",
-      "resources/scoreleap-transcriber/"
+    "targets": [
+      "nsis"
     ],
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "resources": [
+      "resources/scoreleap-model/",
+      "resources/scoreleap-transcriber/",
+      "resources/scoreleap-transkun/",
+      "resources/game-profiles/"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
     "shortDescription": "跨平台游戏乐器曲谱转换与辅助演奏工具",
     "longDescription": "ScoreLeap（谱跃）将 MIDI/曲谱转换为适合游戏内乐器演奏的标准时间轴，通过键盘或触摸在自由演奏场景完成演奏。仅用于自由演奏/个人空间，请注意游戏服务条款风险。",
     "category": "Utility"

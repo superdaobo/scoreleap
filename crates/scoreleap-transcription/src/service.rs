@@ -13,13 +13,91 @@ use crate::error::{TranscriptionError, TranscriptionErrorCode};
 use crate::job::{JobStatus, TranscriptionJob};
 use crate::protocol::WorkerMsg;
 
+/// 转录引擎。快速模式使用现有 Basic Pitch ONNX；高质量模式使用安装包内置 Transkun。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionEngine {
+    #[default]
+    Fast,
+    HighQuality,
+}
+
+impl TranscriptionEngine {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Fast => "fast",
+            Self::HighQuality => "high_quality",
+        }
+    }
+}
+
 /// Worker 启动规格（参数数组；禁止 shell 字符串拼接）。
+/// 自包含 Worker（如 Transkun PyInstaller sidecar）不需要外部模型和运行时路径。
 #[derive(Debug, Clone)]
 pub struct WorkerSpec {
     pub program: String,
     pub args: Vec<String>,
-    pub model_path: PathBuf,
+    pub model_path: Option<PathBuf>,
     pub onnx_runtime_path: Option<PathBuf>,
+}
+
+impl WorkerSpec {
+    pub fn basic_pitch(
+        program: impl Into<String>,
+        args: Vec<String>,
+        model_path: PathBuf,
+        onnx_runtime_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            program: program.into(),
+            args,
+            model_path: Some(model_path),
+            onnx_runtime_path,
+        }
+    }
+
+    pub fn self_contained(program: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            program: program.into(),
+            args,
+            model_path: None,
+            onnx_runtime_path: None,
+        }
+    }
+}
+
+/// 可用 Worker 注册表。高质量资源可以缺席，快速模式仍可独立工作。
+#[derive(Debug, Clone, Default)]
+pub struct TranscriptionWorkers {
+    pub fast: Option<WorkerSpec>,
+    pub high_quality: Option<WorkerSpec>,
+}
+
+impl TranscriptionWorkers {
+    fn resolve(&self, engine: TranscriptionEngine) -> Result<&WorkerSpec, TranscriptionError> {
+        let worker = match engine {
+            TranscriptionEngine::Fast => self.fast.as_ref(),
+            TranscriptionEngine::HighQuality => self.high_quality.as_ref(),
+        };
+        worker.ok_or_else(|| {
+            TranscriptionError::new(
+                TranscriptionErrorCode::EngineUnavailable,
+                match engine {
+                    TranscriptionEngine::Fast => "快速转录组件当前不可用",
+                    TranscriptionEngine::HighQuality => {
+                        "高质量钢琴转录组件未包含在当前安装包中，请重新安装完整版"
+                    }
+                },
+            )
+        })
+    }
+
+    pub fn supports(&self, engine: TranscriptionEngine) -> bool {
+        match engine {
+            TranscriptionEngine::Fast => self.fast.is_some(),
+            TranscriptionEngine::HighQuality => self.high_quality.is_some(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -44,6 +122,8 @@ impl TranscriptionPreset {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TranscriptionOptions {
+    #[serde(default)]
+    pub engine: TranscriptionEngine,
     #[serde(default)]
     pub preset: TranscriptionPreset,
     pub onset_threshold: Option<f32>,
@@ -122,7 +202,7 @@ pub struct TranscriptionService {
     inner: Arc<Mutex<Option<ActiveJob>>>,
     /// 串行化“检查空闲 → 启动进程 → 发布任务”，防止两个命令同时穿透单任务限制。
     start_lock: Arc<Mutex<()>>,
-    worker: WorkerSpec,
+    workers: TranscriptionWorkers,
     data_dir: PathBuf,
     on_event: EventFn,
     importer: ImporterFn,
@@ -135,22 +215,44 @@ pub const MAX_FILE_BYTES: u64 = 200 * 1024 * 1024;
 pub const ALLOWED_EXTENSIONS: &[&str] = &["mp3", "wav", "flac"];
 
 impl TranscriptionService {
+    /// 向后兼容的快速模式构造器。
     pub fn new(
         data_dir: PathBuf,
         worker: WorkerSpec,
         on_event: EventFn,
         importer: ImporterFn,
     ) -> Self {
+        Self::new_with_workers(
+            data_dir,
+            TranscriptionWorkers {
+                fast: Some(worker),
+                high_quality: None,
+            },
+            on_event,
+            importer,
+        )
+    }
+
+    pub fn new_with_workers(
+        data_dir: PathBuf,
+        workers: TranscriptionWorkers,
+        on_event: EventFn,
+        importer: ImporterFn,
+    ) -> Self {
         Self {
             inner: Arc::new(Mutex::new(None)),
             start_lock: Arc::new(Mutex::new(())),
-            worker,
+            workers,
             data_dir,
             on_event,
             importer,
             last_error_code: Arc::new(Mutex::new(None)),
             last_error_message: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub fn supports_engine(&self, engine: TranscriptionEngine) -> bool {
+        self.workers.supports(engine)
     }
 
     fn emit(&self, event: TranscriptionEvent) {
@@ -229,14 +331,24 @@ impl TranscriptionService {
         }
         self.validate_input(input_path)?;
         options.validate()?;
-        if !self.worker.model_path.is_file() {
+        let worker = self.workers.resolve(options.engine)?.clone();
+        if options.engine == TranscriptionEngine::Fast && worker.model_path.is_none() {
             return Err(TranscriptionError::new(
                 TranscriptionErrorCode::ModelDownloadRequired,
                 "尚未安装可用的转录模型，请先在设置中下载",
             ));
         }
-        if self
-            .worker
+        if worker
+            .model_path
+            .as_ref()
+            .is_some_and(|path| !path.is_file())
+        {
+            return Err(TranscriptionError::new(
+                TranscriptionErrorCode::ModelDownloadRequired,
+                "尚未安装可用的转录模型，请先在设置中下载",
+            ));
+        }
+        if worker
             .onnx_runtime_path
             .as_ref()
             .is_some_and(|path| !path.is_file())
@@ -278,9 +390,10 @@ impl TranscriptionService {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        // 启动 Worker（参数数组；无 shell；路径由后端决定）
-        let mut cmd = Command::new(&self.worker.program);
-        cmd.args(&self.worker.args)
+        // 启动 Worker（参数数组；无 shell；路径由后端决定）。
+        // Basic Pitch 需要模型/ORT 参数；Transkun sidecar 已自包含这些资源。
+        let mut cmd = Command::new(&worker.program);
+        cmd.args(&worker.args)
             .arg("transcribe")
             .arg("--request-id")
             .arg(&request_id)
@@ -290,12 +403,13 @@ impl TranscriptionService {
             .arg(&midi_path)
             .arg("--output-metadata")
             .arg(&metadata_path)
-            .arg("--model")
-            .arg(&self.worker.model_path)
             .arg("--preset")
             .arg(options.preset.as_str())
             .stdin(Stdio::null());
-        if let Some(runtime) = &self.worker.onnx_runtime_path {
+        if let Some(model) = &worker.model_path {
+            cmd.arg("--model").arg(model);
+        }
+        if let Some(runtime) = &worker.onnx_runtime_path {
             cmd.arg("--onnx-runtime").arg(runtime);
         }
         if let Some(value) = options.onset_threshold {

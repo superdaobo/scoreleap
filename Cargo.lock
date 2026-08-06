@@ -3249,7 +3249,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "scoreleap"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "scoreleap-arranger",
  "scoreleap-core",
@@ -3271,7 +3271,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-arranger"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "scoreleap-game-profile",
  "scoreleap-midi",
@@ -3284,7 +3284,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-audio"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "rubato",
  "serde",
@@ -3295,7 +3295,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-core"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "midly",
  "scoreleap-arranger",
@@ -3317,7 +3317,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-game-profile"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "scoreleap-music-ir",
  "serde",
@@ -3327,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-midi"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "midly",
  "scoreleap-music-ir",
@@ -3336,7 +3336,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-model-manager"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "ed25519-dalek",
  "hex",
@@ -3351,7 +3351,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-music-ir"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3359,7 +3359,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-scheduler"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "scoreleap-music-ir",
  "scoreleap-sequence",
@@ -3370,7 +3370,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-sequence"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "scoreleap-music-ir",
  "serde",
@@ -3379,7 +3379,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-transcribe"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "midly",
  "ndarray",
@@ -3394,7 +3394,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-transcriber-native"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "scoreleap-transcribe",
  "serde",
@@ -3406,7 +3406,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-transcription"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "scoreleap-midi",
  "serde",
@@ -4284,7 +4284,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-scoreleap-input"
-version = "0.2.4"
+version = "0.3.1"
 dependencies = [
  "scoreleap-music-ir",
  "scoreleap-scheduler",
