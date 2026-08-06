@@ -424,6 +424,7 @@ pub fn resolve_active_model(app: &AppHandle) -> Result<PathBuf, ModelManagerErro
 pub fn resolve_packaged_file(
     app: &AppHandle,
     relative: &Path,
+    #[allow(unused_variables)] // 仅 debug 构建用于开发环境变量覆盖
     development_variable: &str,
 ) -> Option<PathBuf> {
     #[cfg(debug_assertions)]
