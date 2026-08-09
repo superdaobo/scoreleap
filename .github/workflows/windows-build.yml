@@ -6,22 +6,9 @@ on:
     tags:
       - "v*"
   pull_request:
-    paths:
-      - ".github/workflows/windows-build.yml"
-      - "apps/scoreleap/**"
-      - "apps/scoreleap-transcriber-native/**"
-      - "crates/scoreleap-audio/**"
-      - "crates/scoreleap-transcribe/**"
-      - "crates/scoreleap-model-manager/**"
-      - "tools/native-transcriber-packaging/**"
-      - "scripts/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "package.json"
-      - "pnpm-lock.yaml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: windows-native-build-${{ github.ref }}
@@ -66,7 +53,7 @@ jobs:
           key: onnxruntime-win-x64-1.24.4-d2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357
 
       - name: PowerShell syntax check (60 second limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-powershell-syntax.ps1 scripts/invoke-with-timeout.ps1 scripts/check-powershell-syntax.ps1 tools/native-transcriber-packaging/Packaging.Common.ps1 tools/native-transcriber-packaging/Prepare-NativeTranscriber.ps1 tools/native-transcriber-packaging/Test-NativeTranscriberBundle.ps1 tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 tools/native-transcriber-packaging/Test-CleanInstall.ps1 tools/native-transcriber-packaging/Publish-WindowsArtifactMetadata.ps1 tools/native-transcriber-packaging/Test-PackagingSources.ps1 tools/native-transcriber-packaging/Test-PackagingSecurity.ps1
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-powershell-syntax.ps1 scripts/invoke-with-timeout.ps1 scripts/check-powershell-syntax.ps1 scripts/Rename-NsisInstaller.ps1 scripts/package.ps1 tools/native-transcriber-packaging/Packaging.Common.ps1 tools/native-transcriber-packaging/Prepare-NativeTranscriber.ps1 tools/native-transcriber-packaging/Test-NativeTranscriberBundle.ps1 tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 tools/native-transcriber-packaging/Test-CleanInstall.ps1 tools/native-transcriber-packaging/Publish-WindowsArtifactMetadata.ps1 tools/native-transcriber-packaging/Test-PackagingSources.ps1 tools/native-transcriber-packaging/Test-PackagingSecurity.ps1
 
       - name: Packaging source contract check (60 second limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Test-PackagingSources.ps1
@@ -104,6 +91,9 @@ jobs:
       - name: Build NSIS installer (15 minute limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 900 -Executable pnpm.cmd tauri build --bundles nsis
 
+      - name: Rename installer to fixed name (ScoreLeap-setup.exe)
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Rename-NsisInstaller.ps1
+
       - name: Locate installer and compute SHA256
         id: artifact
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Publish-WindowsArtifactMetadata.ps1
@@ -122,3 +112,14 @@ jobs:
             .build-tmp/native-e2e/**/*.json
             .build-tmp/native-e2e-installed/**/*.json
           if-no-files-found: error
+
+      - name: Publish GitHub Release (tag only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/bundle/nsis/ScoreLeap-setup.exe
+            apps/scoreleap/src-tauri/target/release/bundle/nsis/ScoreLeap-setup.exe
+            scoreleap-windows-installer.sha256
+          fail_on_unmatched_files: false
+          generate_release_notes: true
