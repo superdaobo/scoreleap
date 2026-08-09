@@ -54,7 +54,7 @@
 ## 安装
 
 从 [GitHub Releases](https://github.com/superdaobo/scoreleap/releases) 下载
-Windows NSIS 安装包（`ScoreLeap_0.1.0_x64-setup.exe`）。
+Windows NSIS 安装包（固定名 `ScoreLeap-setup.exe`，版本号见 Release 标题与页内 SHA256）。
 
 - **SmartScreen 提示**：安装包未做代码签名时，Windows SmartScreen 会提示
   “Windows 已保护你的电脑 / 未知发布者”。这是未签名软件的常规提示，并非病毒。
@@ -62,7 +62,7 @@ Windows NSIS 安装包（`ScoreLeap_0.1.0_x64-setup.exe`）。
 - **SHA256 校验**（与 Release 页公布的哈希比对）：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 -Path .\ScoreLeap_0.1.0_x64-setup.exe
+Get-FileHash -Algorithm SHA256 -Path .\ScoreLeap-setup.exe
 ```
 
 - **系统要求**：Windows 10/11 x64（要求系统级键盘输入权限，运行于用户会话）。
@@ -107,8 +107,16 @@ pnpm test             # 前端单元测试
 cargo test --workspace        # Rust 全工作区测试
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 node scripts/gen-fixtures.mjs # 重新生成 MIDI 测试固件（fixtures/midi/）
-pnpm tauri build      # 构建发布版（NSIS 安装包）
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1  # 一键打包（推荐）
+pnpm tauri build      # 直接构建发布版（NSIS 安装包）
 ```
+
+打包产物统一命名与输出位置：
+
+- 安装包固定为 **`ScoreLeap-setup.exe`**（版本号不进入文件名，只显示在应用内「关于」页与系统文件属性中）。
+- 一键打包脚本 `scripts/package.ps1` 执行 NSIS 构建（含前端构建）→ 重命名安装包 → 输出到 **`dist/release/ScoreLeap-setup.exe`**；`-SkipBuild` 可复用现有产物。
+- 手动构建后用 `scripts/Rename-NsisInstaller.ps1` 将 Tauri 默认的 `ScoreLeap_<版本>_<架构>-setup.exe` 重命名为 `ScoreLeap-setup.exe`。
+- 发布流程（版本递增、打 tag、GitHub Actions 自动构建发布）见 [docs/RELEASING.md](docs/RELEASING.md)。
 
 仓库结构：`apps/scoreleap`（Tauri 应用）、`crates/*`（平台无关核心）、
 `plugins/tauri-plugin-scoreleap-input`（Windows SendInput 输入后端）、

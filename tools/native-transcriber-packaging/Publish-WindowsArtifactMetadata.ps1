@@ -19,7 +19,8 @@ $searchDirectories = @(
 $installers = @()
 foreach ($directory in $searchDirectories) {
     if (Test-Path -LiteralPath $directory -PathType Container) {
-        $installers += Get-ChildItem -LiteralPath $directory -File -Filter "*.exe"
+        # 安装包文件名固定为 ScoreLeap-setup.exe（版本号不进入文件名），由 scripts/Rename-NsisInstaller.ps1 在构建后重命名
+        $installers += Get-ChildItem -LiteralPath $directory -File -Filter "ScoreLeap-setup.exe"
     }
 }
 $installers = @($installers | Sort-Object FullName -Unique)

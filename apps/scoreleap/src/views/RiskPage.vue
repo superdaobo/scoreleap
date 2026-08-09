@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { getVersion } from '@tauri-apps/api/app'
 import { useSettingsStore } from '../stores/settingsStore'
 
 const router = useRouter()
 const settings = useSettingsStore()
 const agreed = ref(false)
+const appVersion = ref('0.3.1')
 
 function acceptAndContinue(): void {
   if (!agreed.value) return
@@ -17,7 +19,12 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Enter' && agreed.value) acceptAndContinue()
 }
 
-onMounted(() => document.addEventListener('keydown', onKeydown))
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+  getVersion()
+    .then((v) => (appVersion.value = v))
+    .catch(() => {})
+})
 onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 </script>
 
@@ -147,7 +154,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       <div class="mt-6 text-center">
         <span
           class="border border-outline-variant/30 bg-surface-container-highest px-2 py-1 font-label-caps text-label-caps text-on-surface-variant/50"
-          >SCORELEAP_SYS_v0.2.4</span
+          >SCORELEAP_SYS_v{{ appVersion }}</span
         >
       </div>
     </main>
