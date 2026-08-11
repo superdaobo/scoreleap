@@ -7,8 +7,9 @@ use scoreleap_midi::parse_midi;
 use scoreleap_sequence::PlatformAction;
 
 fn profile() -> scoreleap_music_ir::GameProfile {
+    // profile 目录于 PR #56 起随资源打包移动，位于 src-tauri/resources/game-profiles
     let path = format!(
-        "{}/../../game-profiles/identity-v",
+        "{}/../../apps/scoreleap/src-tauri/resources/game-profiles/identity-v",
         env!("CARGO_MANIFEST_DIR")
     );
     load_profile(std::path::Path::new(&path)).expect("identity-v profile 应可加载")

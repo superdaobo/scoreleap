@@ -145,7 +145,7 @@ impl HttpSourceDownloader {
         if !scheme_allowed {
             return Err("下载地址必须使用 HTTPS".into());
         }
-        if !url.host_str().is_some_and(|host| !host.is_empty()) {
+        if url.host_str().is_none_or(|host| host.is_empty()) {
             return Err("下载地址缺少有效主机名".into());
         }
         if !url.username().is_empty() || url.password().is_some() {
