@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{TranscriptionError, TranscriptionErrorCode};
 use crate::job::{JobStatus, TranscriptionJob};
 use crate::protocol::WorkerMsg;
+use crate::raw_stats::RawTranscriptionStats;
 
 /// 转录引擎。快速模式使用现有 Basic Pitch ONNX；高质量模式使用安装包内置 Transkun。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -465,6 +466,7 @@ impl TranscriptionService {
                     result_doc_id: None,
                     error_code: None,
                     error_message: None,
+                    raw_stats: None,
                 },
                 task_dir,
                 child: child_shared.clone(),
@@ -644,6 +646,27 @@ impl TranscriptionService {
                             job.status = JobStatus::Completed;
                             job.result_doc_id = Some(doc_id.clone());
                             job.message = "转录完成".into();
+                            // Issue #57 可观测性：解析 worker metadata 的 notes，
+                            // 计算原始高音统计（区分「模型漏高音」与「编排删除高音」）。
+                            if let Some(meta_path) = &job.metadata_path {
+                                if let Ok(bytes) = std::fs::read(meta_path) {
+                                    if let Some(stats) =
+                                        RawTranscriptionStats::from_metadata_json(&bytes)
+                                    {
+                                        tracing::debug!(
+                                            job_id = %job.job_id,
+                                            raw_note_count = stats.raw_note_count,
+                                            raw_min_pitch = stats.raw_min_pitch,
+                                            raw_max_pitch = stats.raw_max_pitch,
+                                            low_outside_game = stats.low_outside_game,
+                                            directly_playable = stats.directly_playable,
+                                            high_outside_game = stats.high_outside_game,
+                                            "Transkun raw register stats (Issue #57)"
+                                        );
+                                        job.raw_stats = Some(stats);
+                                    }
+                                }
+                            }
                             {
                                 let mut guard = inner.lock().unwrap();
                                 if let Some(a) = guard.as_mut() {

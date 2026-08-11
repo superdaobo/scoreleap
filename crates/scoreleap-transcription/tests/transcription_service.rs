@@ -139,7 +139,9 @@ exit 0
         },
         Arc::new(move |event| ev.lock().unwrap().push(event)),
         Arc::new(move |midi, name| {
-            im.lock().unwrap().push((midi.to_string(), name.to_string()));
+            im.lock()
+                .unwrap()
+                .push((midi.to_string(), name.to_string()));
             Ok("doc-high-quality".into())
         }),
     );
@@ -445,11 +447,11 @@ fn minimum_note_override_is_forwarded_to_worker_with_exact_flag() {
             },
         )
         .unwrap();
-    assert_eq!(
-        wait_terminal(&h.service, 20),
-        Some(JobStatus::Completed)
-    );
+    assert_eq!(wait_terminal(&h.service, 20), Some(JobStatus::Completed));
     let meta_path = h.data_dir.join("jobs").join(&job_id).join("metadata.json");
     let captured = std::fs::read_to_string(&meta_path).unwrap();
-    assert_eq!(captured, "piano_balanced|90", "sidecar 必须收到 --preset=piano_balanced 与 --minimum-note-length-ms=90");
+    assert_eq!(
+        captured, "piano_balanced|90",
+        "sidecar 必须收到 --preset=piano_balanced 与 --minimum-note-length-ms=90"
+    );
 }
