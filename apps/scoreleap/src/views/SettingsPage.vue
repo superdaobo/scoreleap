@@ -204,8 +204,11 @@ async function confirmReAgree(): Promise<void> {
           </p>
         </section>
 
-        <!-- 音频转录模型 -->
-        <section class="tech-border relative rounded-lg bg-surface-container-low p-6">
+        <!-- 音频转录模型（仅 Basic Pitch 快速引擎需要下载/管理；Transkun 自包含无需模型管理） -->
+        <section
+          v-if="transcription.engine === 'fast'"
+          class="tech-border relative rounded-lg bg-surface-container-low p-6"
+        >
           <div class="mb-6 flex flex-wrap items-start justify-between gap-3 border-b border-outline-variant pb-4">
             <h3 class="flex items-center gap-2 font-body-lg text-body-lg text-primary">
               <span class="material-symbols-outlined text-[20px]">memory</span>
@@ -308,6 +311,27 @@ async function confirmReAgree(): Promise<void> {
               ></div>
             </div>
           </div>
+        </section>
+
+        <!-- 高质量引擎说明（Transkun 自包含，无需模型下载/管理） -->
+        <section
+          v-if="transcription.engine === 'high_quality'"
+          class="tech-border rounded-lg bg-surface-container-low p-6"
+        >
+          <div class="mb-4 flex items-center gap-2 border-b border-outline-variant pb-4">
+            <h3 class="flex items-center gap-2 font-body-lg text-body-lg text-primary">
+              <span class="material-symbols-outlined text-[20px]">neurology</span>
+              高质量钢琴（Transkun v2）
+            </h3>
+          </div>
+          <p class="max-w-md font-code-sm text-code-sm text-on-surface-variant">
+            高质量引擎为自包含运行时：Transkun 2.0 模型已随安装包内置（约 600MB），
+            CPU 本地运行，无需下载转录模型，也不依赖外部 Python / PyTorch / ffmpeg。
+          </p>
+          <p class="mt-2 max-w-md font-code-sm text-code-sm text-on-surface-variant">
+            转录入口位于「谱曲库 → 导入音频」，选择本引擎后音频将使用 Transkun
+            的 Transformer + Semi-CRF 区间解码，音符边界更准确，速度较慢。
+          </p>
         </section>
 
         <!-- Basic Pitch 高级阈值；Transkun 使用模型自身的区间解码，不暴露这些阈值。 -->
