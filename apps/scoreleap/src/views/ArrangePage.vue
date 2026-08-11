@@ -49,6 +49,8 @@ const strategy = ref<RangeStrategy>('OctaveDown')
 const polyphony = ref(4)
 const quantize = ref<QuantizeGrid | null>(null)
 const simplify = ref(true)
+// Issue #57：旋律感知复音保护（audio_transcription 默认开启，见 loadDoc 初始化）
+const melodyProtection = ref(false)
 
 const compileSummary = ref<CompileSummary | null>(null)
 const notesData = ref<NoteView[]>([])
@@ -72,6 +74,7 @@ async function doCompile(): Promise<void> {
     max_polyphony: polyphony.value,
     quantize_grid: quantize.value,
     simplify_chords: simplify.value,
+    melody_protection: melodyProtection.value,
   }
   compiling.value = true
   store.error = null
@@ -329,6 +332,13 @@ function loop(): void {
 onMounted(() => {
   ensureProfile()
   loop()
+  // Issue #57：音频转录（Transkun 高质量钢琴）默认 SmartFold + 旋律保护；
+  // 直接 MIDI 保持原有 OctaveDown 行为，不破坏既有导入体验。
+  const doc = store.documents.find((d) => d.doc_id === docId.value)
+  if (doc?.source_type === 'audio_transcription') {
+    strategy.value = 'SmartFold'
+    melodyProtection.value = true
+  }
 })
 
 onUnmounted(() => {
@@ -342,7 +352,7 @@ const paramHints: Record<string, string> = {
   polyphony: '同一时刻最多同时响几个音。调太小，和弦会被砍掉几个音；调太大，游戏乐器可能按不过来。一般 4 就够。',
   transpose: '把整首曲子整体升高或降低几个半音（一个八度 = 12 个半音），让旋律落在游戏琴键适合的范围内。',
   autoFit: '自动把音符整体移动，尽量让所有音都落在游戏乐器的音域里。开启后手动移调会被禁用。',
-  strategy: '超出音域的音符怎么处理：降八度 = 整体下移一个八度接着弹；丢弃 = 干脆不弹；静音 = 保留节奏但不发音。',
+  strategy: '超出音域的音符怎么处理：降八度 = 整体下移八度接着弹；智能八度 = 按旋律连续性选择同音名八度（音频转录推荐）；丢弃 = 干脆不弹；静音 = 保留节奏但不发音。',
   quantize: '把音符的起止时间对齐到节拍网格，让节奏更整齐。适合原始录音拍点不齐的情况。',
   simplify: '把复杂的和弦简化成更容易弹的形式（保留骨干音），降低演奏难度。',
 }
@@ -480,6 +490,7 @@ const zoomLabel = computed(() => `${zoom.value.toFixed(1)}x`)
                 class="w-full border border-outline-variant bg-surface-container-lowest px-3 py-2 font-code-sm text-code-sm text-on-surface focus:border-primary"
               >
                 <option value="OctaveDown">降八度（整体下移一个八度接着弹）</option>
+                <option value="SmartFold">智能八度（SmartFold，按旋律连续性选择同音名八度）</option>
                 <option value="Drop">丢弃（超出音域就不弹）</option>
                 <option value="Mute">静音（保留节奏但不发音）</option>
               </select>
@@ -566,6 +577,30 @@ const zoomLabel = computed(() => `${zoom.value.toFixed(1)}x`)
               <div class="flex justify-between">
                 <dt class="text-on-surface-variant">静音</dt>
                 <dd class="text-on-surface">{{ stats.muted }}</dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="text-on-surface-variant">折叠·高音</dt>
+                <dd class="text-on-surface">{{ stats.folded_from_high }}</dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="text-on-surface-variant">折叠·低音</dt>
+                <dd class="text-on-surface">{{ stats.folded_from_low }}</dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="text-on-surface-variant">折叠碰撞</dt>
+                <dd class="text-on-surface">{{ stats.fold_collisions }}</dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="text-on-surface-variant">保护·Top</dt>
+                <dd class="text-primary">{{ stats.protected_top_voice }}</dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="text-on-surface-variant">保护·Bass</dt>
+                <dd class="text-primary">{{ stats.protected_bass }}</dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="text-on-surface-variant">裁·Top</dt>
+                <dd class="text-error">{{ stats.dropped_top_voice }}</dd>
               </div>
             </dl>
             <p class="mt-2 border-t border-outline-variant pt-2 text-xs text-on-surface-variant">

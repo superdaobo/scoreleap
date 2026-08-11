@@ -41,6 +41,7 @@ const SAMPLE_JOB: TranscriptionJobView = {
   result_doc_id: null,
   error_code: null,
   error_message: null,
+  raw_stats: null,
 }
 
 describe('transcriptionStore', () => {

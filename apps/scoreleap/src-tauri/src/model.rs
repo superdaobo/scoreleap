@@ -107,13 +107,18 @@ fn trusted_config_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), ModelMana
     ];
     let model_dir = candidates
         .into_iter()
-        .find(|dir| dir.join("catalog.signed.json").is_file() && dir.join("public-key.hex").is_file())
+        .find(|dir| {
+            dir.join("catalog.signed.json").is_file() && dir.join("public-key.hex").is_file()
+        })
         .ok_or_else(|| {
             ModelManagerError::TrustConfigurationMissing(
                 "缺少 catalog.signed.json 或 public-key.hex；发布流程必须注入可信配置".into(),
             )
         })?;
-    Ok((model_dir.join("catalog.signed.json"), model_dir.join("public-key.hex")))
+    Ok((
+        model_dir.join("catalog.signed.json"),
+        model_dir.join("public-key.hex"),
+    ))
 }
 
 fn load_context(app: &AppHandle) -> Result<ModelContext, ModelManagerError> {

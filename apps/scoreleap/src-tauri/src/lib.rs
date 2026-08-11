@@ -116,7 +116,23 @@ fn compile(
     enabled_tracks: Vec<u16>,
     options: scoreleap_arranger::ArrangementOptions,
 ) -> Result<scoreleap_core::CompileSummary, CoreError> {
-    scoreleap_core::compile(&state, doc_id, enabled_tracks, options)
+    let summary = scoreleap_core::compile(&state, doc_id, enabled_tracks, options)?;
+    // Issue #57 可观测性：编排统计摘要（高音是否在折叠/复音阶段丢失）
+    let s = &summary.stats;
+    tracing::debug!(
+        input_notes = s.input_notes,
+        output_notes = s.output_notes,
+        folded_from_low = s.folded_from_low,
+        folded_from_high = s.folded_from_high,
+        fold_collisions = s.fold_collisions,
+        smart_fold_reassigned = s.smart_fold_reassigned,
+        protected_top_voice = s.protected_top_voice,
+        protected_bass = s.protected_bass,
+        dropped_top_voice = s.dropped_top_voice,
+        dropped_polyphony = s.dropped_polyphony,
+        "Arrange stats (Issue #57)"
+    );
+    Ok(summary)
 }
 
 #[tauri::command]

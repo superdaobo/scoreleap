@@ -55,6 +55,21 @@ export interface TranscriptionJobView {
   result_doc_id: string | null
   error_code: string | null
   error_message: string | null
+  /** 转录原始输出统计（Issue #57 诊断：区分模型漏高音与编排删除高音） */
+  raw_stats: RawTranscriptionStatsView | null
+}
+
+/** 转录原始输出统计（来自 worker metadata.notes 的 pitch 分布） */
+export interface RawTranscriptionStatsView {
+  raw_note_count: number
+  raw_min_pitch: number | null
+  raw_max_pitch: number | null
+  /** MIDI 21–47：低于游戏音域 */
+  low_outside_game: number
+  /** MIDI 48–83：可直接演奏 */
+  directly_playable: number
+  /** MIDI 84–108：高于游戏音域 */
+  high_outside_game: number
 }
 
 /** transcription://completed 事件载荷 */
@@ -176,7 +191,7 @@ export interface TrackSummary {
 }
 
 /** 音域越界策略 */
-export type RangeStrategy = 'OctaveDown' | 'Drop' | 'Mute'
+export type RangeStrategy = 'OctaveDown' | 'Drop' | 'Mute' | 'SmartFold'
 
 /** 量化网格 */
 export type QuantizeGrid = 'Eighth' | 'Sixteenth'
@@ -189,6 +204,8 @@ export interface ArrangementOptions {
   max_polyphony: number
   quantize_grid: QuantizeGrid | null
   simplify_chords: boolean
+  /** 旋律感知复音保护（Issue #57）：audio_transcription 高质量钢琴默认开启 */
+  melody_protection: boolean
 }
 
 /** 编排统计 */
@@ -200,6 +217,20 @@ export interface ArrangeStats {
   folded: number
   dropped_polyphony: number
   applied_transpose: number
+  /** 低音越界升八度折叠数 */
+  folded_from_low: number
+  /** 高音越界降八度折叠数 */
+  folded_from_high: number
+  /** 同一 onset 内折叠后目标键碰撞数 */
+  fold_collisions: number
+  /** SmartFold 重分配次数 */
+  smart_fold_reassigned: number
+  /** 旋律保护保留的 Top Voice 数 */
+  protected_top_voice: number
+  /** 旋律保护保留的 Bass 数 */
+  protected_bass: number
+  /** 被旋律保护逻辑丢弃的 Top Voice 数 */
+  dropped_top_voice: number
 }
 
 /** 编译结果摘要（compile 返回值） */
