@@ -18,7 +18,7 @@ jobs:
   build:
     name: Native sidecar, ONNX Runtime, NSIS and clean-install
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       # 可选的自托管 runner 路径；未同时配置时只运行协议/缺模型 E2E。
       SCORELEAP_E2E_MODEL: ${{ vars.SCORELEAP_E2E_MODEL }}
@@ -52,8 +52,19 @@ jobs:
           path: .build-tmp/packaging-cache/onnxruntime-win-x64-1.24.4.zip
           key: onnxruntime-win-x64-1.24.4-d2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357
 
+      - name: Setup uv (Transkun worker build)
+        uses: astral-sh/setup-uv@v5
+
+      - name: Transkun wheelhouse cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build-tmp/wheelhouse
+            .build-tmp/pip-cache
+          key: transkun-wheelhouse-v1
+
       - name: PowerShell syntax check (60 second limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-powershell-syntax.ps1 scripts/invoke-with-timeout.ps1 scripts/check-powershell-syntax.ps1 scripts/Rename-NsisInstaller.ps1 scripts/package.ps1 tools/native-transcriber-packaging/Packaging.Common.ps1 tools/native-transcriber-packaging/Prepare-NativeTranscriber.ps1 tools/native-transcriber-packaging/Test-NativeTranscriberBundle.ps1 tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 tools/native-transcriber-packaging/Test-CleanInstall.ps1 tools/native-transcriber-packaging/Publish-WindowsArtifactMetadata.ps1 tools/native-transcriber-packaging/Test-PackagingSources.ps1 tools/native-transcriber-packaging/Test-PackagingSecurity.ps1
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-powershell-syntax.ps1 scripts/invoke-with-timeout.ps1 scripts/check-powershell-syntax.ps1 scripts/Rename-NsisInstaller.ps1 scripts/package.ps1 tools/native-transcriber-packaging/Packaging.Common.ps1 tools/native-transcriber-packaging/Prepare-NativeTranscriber.ps1 tools/native-transcriber-packaging/Test-NativeTranscriberBundle.ps1 tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 tools/native-transcriber-packaging/Test-CleanInstall.ps1 tools/native-transcriber-packaging/Publish-WindowsArtifactMetadata.ps1 tools/native-transcriber-packaging/Test-PackagingSources.ps1 tools/native-transcriber-packaging/Test-PackagingSecurity.ps1 tools/transkun-worker/Prepare-TranskunWorker.ps1 tools/transkun-worker/Test-TranskunBundle.ps1
 
       - name: Packaging source contract check (60 second limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Test-PackagingSources.ps1
@@ -87,6 +98,9 @@ jobs:
 
       - name: Native JSONL and optional real-audio E2E (60 second process limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 -SidecarPath apps/scoreleap/src-tauri/resources/scoreleap-transcriber/scoreleap-transcriber-native.exe -RuntimeDirectory apps/scoreleap/src-tauri/resources/scoreleap-transcriber -TimeoutSeconds 60
+
+      - name: Prepare Transkun high-quality worker (20 minute limit)
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 1200 -Executable pnpm.cmd prepare:transkun
 
       - name: Build NSIS installer (15 minute limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 900 -Executable pnpm.cmd tauri build --bundles nsis
