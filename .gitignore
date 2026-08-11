@@ -46,6 +46,7 @@ Thumbs.db
 *.swp
 
 target-v013/
+target-build-v2/
 
 .build-tmp/
 
