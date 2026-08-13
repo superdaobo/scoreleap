@@ -105,8 +105,8 @@ jobs:
       - name: Prepare Transkun high-quality worker (20 minute limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 1200 -Executable "$env:PNPM_HOME\pnpm.cmd" prepare:transkun
 
-      - name: Build NSIS installer (15 minute limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 900 -Executable "$env:PNPM_HOME\pnpm.cmd" tauri build --bundles nsis
+      - name: Build NSIS installer (30 minute limit)
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 1800 -Executable "$env:PNPM_HOME\pnpm.cmd" tauri build --bundles nsis
 
       - name: Rename installer to fixed name (ScoreLeap-setup.exe)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Rename-NsisInstaller.ps1
