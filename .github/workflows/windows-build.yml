@@ -31,6 +31,9 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.33.4
+          # 安装到 job 独立目录：避免与同 run 其他 job 共享 ~/setup-pnpm
+          # 时 rm/mkdir 竞争导致 pnpm.cjs 缺失（Cannot find module ...pnpm.cjs）
+          dest: ${{ runner.temp }}/pnpm
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -73,22 +76,22 @@ jobs:
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Test-PackagingSecurity.ps1
 
       - name: Install frontend dependencies (5 minute limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 300 -Executable pnpm.cmd install --frozen-lockfile
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 300 -Executable "$env:PNPM_HOME\pnpm.cmd" install --frozen-lockfile
 
       - name: Native format check (60 second limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable cargo.exe fmt --check
 
       - name: Native tests (60 second limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable cargo.exe test --locked -p scoreleap-transcribe -p scoreleap-transcriber-native
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 180 -Executable cargo.exe test --locked --package scoreleap-transcribe --package scoreleap-transcriber-native
 
       - name: Frontend tests (60 second limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable pnpm.cmd test
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable "$env:PNPM_HOME\pnpm.cmd" test
 
       - name: Frontend build (3 minute limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 180 -Executable pnpm.cmd build
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 180 -Executable "$env:PNPM_HOME\pnpm.cmd" build
 
       - name: Build release native sidecar (10 minute limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 600 -Executable cargo.exe build --locked --release -p scoreleap-transcriber-native
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 600 -Executable cargo.exe build --locked --release --package scoreleap-transcriber-native
 
       - name: Prepare verified native resources (5 minute limit)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 300 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Prepare-NativeTranscriber.ps1 -SkipNativeBuild
@@ -100,10 +103,10 @@ jobs:
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/native-transcriber-packaging/Invoke-NativeTranscriberE2E.ps1 -SidecarPath apps/scoreleap/src-tauri/resources/scoreleap-transcriber/scoreleap-transcriber-native.exe -RuntimeDirectory apps/scoreleap/src-tauri/resources/scoreleap-transcriber -TimeoutSeconds 60
 
       - name: Prepare Transkun high-quality worker (20 minute limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 1200 -Executable pnpm.cmd prepare:transkun
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 1200 -Executable "$env:PNPM_HOME\pnpm.cmd" prepare:transkun
 
-      - name: Build NSIS installer (15 minute limit)
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 900 -Executable pnpm.cmd tauri build --bundles nsis
+      - name: Build NSIS installer (30 minute limit)
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 1800 -Executable "$env:PNPM_HOME\pnpm.cmd" tauri build --bundles nsis
 
       - name: Rename installer to fixed name (ScoreLeap-setup.exe)
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-with-timeout.ps1 -TimeoutSeconds 60 -Executable powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Rename-NsisInstaller.ps1

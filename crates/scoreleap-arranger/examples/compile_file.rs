@@ -31,7 +31,7 @@ fn main() {
     }
 
     let profile_path = format!(
-        "{}/../../game-profiles/identity-v",
+        "{}/../../apps/scoreleap/src-tauri/resources/game-profiles/identity-v",
         env!("CARGO_MANIFEST_DIR")
     );
     let profile =

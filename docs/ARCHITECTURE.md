@@ -290,7 +290,7 @@ pub struct TempoEvent { pub time_us: i64, pub tempo_us_per_quarter: u32 }
 pub struct TimeSignatureEvent { pub time_us: i64, pub numerator: u8, pub denominator: u8 }
 
 // arranger
-pub struct ArrangementOptions { pub transpose_semitones: i8, pub auto_fit_range: bool, pub range_strategy: RangeStrategy, pub max_polyphony: u8, pub quantize_grid: Option<QuantizeGrid>, pub simplify_chords: bool }
+pub struct ArrangementOptions { pub transpose_semitones: i8, pub auto_fit_range: bool, pub range_strategy: RangeStrategy, pub max_polyphony: u8, pub quantize_grid: Option<QuantizeGrid>, pub simplify_chords: bool, pub melody_protection: bool }
 
 // game-profile
 pub struct GameProfile { pub id: String, pub keys: u8, pub midi_low: u8, pub midi_high: u8, pub max_polyphony: u8, pub keymap: HashMap<u8, KeyCode>, pub layout: InstrumentLayout }

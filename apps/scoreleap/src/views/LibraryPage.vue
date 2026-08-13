@@ -246,6 +246,20 @@ function onDrop(e: DragEvent): void {
             >{{ txStore.errorLabel(txStore.job.error_code, txStore.job.error_message || '转录失败') }}</span
           >
         </div>
+        <div
+          v-if="txStore.job.status === 'Completed' && txStore.job.raw_stats"
+          class="mt-3 border-t border-outline-variant/40 pt-2 font-code-sm text-code-sm text-on-surface-variant"
+        >
+          <p class="text-xs">
+            原始输出 {{ txStore.job.raw_stats.raw_note_count.toLocaleString() }} 音符
+            （{{ txStore.job.raw_stats.raw_min_pitch ?? '—' }}–{{ txStore.job.raw_stats.raw_max_pitch ?? '—' }}）
+          </p>
+          <p class="text-xs">
+            低音外 {{ txStore.job.raw_stats.low_outside_game }} · 可直接演奏
+            {{ txStore.job.raw_stats.directly_playable }} · 高音外
+            {{ txStore.job.raw_stats.high_outside_game }}
+          </p>
+        </div>
       </section>
 
       <!-- 曲谱库标题 -->

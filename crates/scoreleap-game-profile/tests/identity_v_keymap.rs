@@ -7,8 +7,10 @@ use scoreleap_game_profile::load_profile;
 use scoreleap_music_ir::KeyCode;
 
 /// 真实 identity-v Profile 目录（相对本 crate）。
+/// profile 随应用资源打包，位于 src-tauri/resources/game-profiles（PR #56 起）。
 fn profile_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game-profiles/identity-v")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/scoreleap/src-tauri/resources/game-profiles/identity-v")
 }
 
 /// 期望映射表：(MIDI note, Scan Code Set 1 十六进制扫描码)。
