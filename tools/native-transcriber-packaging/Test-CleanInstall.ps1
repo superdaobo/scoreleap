@@ -74,6 +74,12 @@ $forbidden = @(
         ForEach-Object {
             # 只审计安装目录内的相对路径，避免父目录恰含 tensorflow/librosa 等词时误报。
             $relativePath = $_.FullName.Substring($InstallDirectory.Length).TrimStart('\', '/').Replace('\', '/')
+            # Transkun 高质量 worker 为 PyInstaller 打包（PR #56 起随安装包分发），
+            # 其 _internal 下的 Python 运行时（python3.dll/python311.dll）与 torch
+            # 属合法内容；Python 依赖禁止规则只约束原生转录器（scoreleap-transcriber）。
+            if ($relativePath -match '(?i)^resources/scoreleap-transkun/') {
+                return
+            }
             if ($relativePath -match '(?i)(python[^/]*\.dll|librosa|numba|tensorflow|site-packages|\.venv|\.(onnx|tflite|pb)$)') {
                 $relativePath
             }
