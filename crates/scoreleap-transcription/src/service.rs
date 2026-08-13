@@ -9,10 +9,38 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use lofty::file::TaggedFileExt;
+use lofty::tag::Accessor;
+
 use crate::error::{TranscriptionError, TranscriptionErrorCode};
 use crate::job::{JobStatus, TranscriptionJob};
 use crate::protocol::WorkerMsg;
 use crate::raw_stats::RawTranscriptionStats;
+
+/// 读取音频文件元数据标签（标题/艺术家；ID3/FLAC/Vorbis）。
+/// 读取失败或无标签返回 (None, None)，不阻断转录流程。
+fn read_audio_tags(path: &Path) -> (Option<String>, Option<String>) {
+    let Ok(probe) = lofty::probe::Probe::open(path) else {
+        return (None, None);
+    };
+    let Ok(file) = probe.read() else {
+        return (None, None);
+    };
+    let mut title = None;
+    let mut artist = None;
+    for tag in file.tags() {
+        if title.is_none() {
+            title = tag.title().map(|s| s.to_string());
+        }
+        if artist.is_none() {
+            artist = tag.artist().map(|s| s.to_string());
+        }
+        if title.is_some() && artist.is_some() {
+            break;
+        }
+    }
+    (title, artist)
+}
 
 /// 转录引擎。快速模式使用现有 Basic Pitch ONNX；高质量模式使用安装包内置 Transkun。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -187,7 +215,20 @@ pub enum TranscriptionEvent {
 }
 
 type EventFn = Arc<dyn Fn(TranscriptionEvent) + Send + Sync>;
-type ImporterFn = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
+
+/// 转录结果导入曲谱库的载荷（转录元数据与源音频标签随曲谱持久化）。
+#[derive(Debug, Clone)]
+pub struct ImportPayload {
+    pub midi_path: String,
+    pub display_name: String,
+    /// worker 写入的 metadata.json 原文（读取失败为 None；解析由曲谱库侧负责）。
+    pub metadata_json: Option<String>,
+    /// 源音频文件元数据标签（ID3/FLAC/Vorbis）。
+    pub title: Option<String>,
+    pub artist: Option<String>,
+}
+
+type ImporterFn = Arc<dyn Fn(&ImportPayload) -> Result<String, String> + Send + Sync>;
 
 struct ActiveJob {
     job: TranscriptionJob,
@@ -368,6 +409,8 @@ impl TranscriptionService {
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "audio.mp3".into());
+        // 源音频元数据标签（标题/艺术家），随转录结果持久化到曲谱库
+        let (tag_title, tag_artist) = read_audio_tags(Path::new(input_path));
 
         let jobs_root = self.data_dir.join("jobs");
         std::fs::create_dir_all(&jobs_root).map_err(|e| {
@@ -466,6 +509,8 @@ impl TranscriptionService {
                     result_doc_id: None,
                     error_code: None,
                     error_message: None,
+                    title: tag_title,
+                    artist: tag_artist,
                     raw_stats: None,
                 },
                 task_dir,
@@ -635,13 +680,24 @@ impl TranscriptionService {
                         finish_job(&inner, &on_event, &jid, job);
                         return;
                     }
-                    // 导入曲谱库（共享入口）
+                    // 导入曲谱库（共享入口）；转录元数据与源音频标签随曲谱持久化
                     let base = Path::new(&job.source_name)
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_else(|| "转录曲谱".into());
                     let display_name = format!("{base}（音频转录）");
-                    match importer(&midi_path, &display_name) {
+                    let metadata_json = job
+                        .metadata_path
+                        .as_deref()
+                        .and_then(|p| std::fs::read_to_string(p).ok());
+                    let payload = ImportPayload {
+                        midi_path: midi_path.clone(),
+                        display_name,
+                        metadata_json,
+                        title: job.title.clone(),
+                        artist: job.artist.clone(),
+                    };
+                    match importer(&payload) {
                         Ok(doc_id) => {
                             job.status = JobStatus::Completed;
                             job.result_doc_id = Some(doc_id.clone());

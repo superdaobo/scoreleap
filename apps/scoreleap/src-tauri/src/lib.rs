@@ -93,6 +93,76 @@ fn list_documents(
     scoreleap_core::list_documents(&state)
 }
 
+// --- 曲谱库管理（Issue #59）：分组 / 排序 / 删除 / 重命名 / 曲目信息 ---
+
+#[tauri::command]
+fn list_groups(state: State<'_, AppState>) -> Result<Vec<scoreleap_core::GroupInfo>, CoreError> {
+    scoreleap_core::list_groups(&state)
+}
+
+#[tauri::command]
+fn create_group(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<scoreleap_core::GroupInfo, CoreError> {
+    scoreleap_core::create_group(&state, &name)
+}
+
+#[tauri::command]
+fn rename_group(
+    state: State<'_, AppState>,
+    group_id: String,
+    name: String,
+) -> Result<scoreleap_core::GroupInfo, CoreError> {
+    scoreleap_core::rename_group(&state, &group_id, &name)
+}
+
+#[tauri::command]
+fn delete_group(state: State<'_, AppState>, group_id: String) -> Result<(), CoreError> {
+    scoreleap_core::delete_group(&state, &group_id)
+}
+
+#[tauri::command]
+fn move_document_to_group(
+    state: State<'_, AppState>,
+    doc_id: String,
+    group_id: Option<String>,
+) -> Result<(), CoreError> {
+    scoreleap_core::move_document_to_group(&state, &doc_id, group_id)
+}
+
+#[tauri::command]
+fn reorder_documents(
+    state: State<'_, AppState>,
+    doc_ids: Vec<String>,
+) -> Result<(), CoreError> {
+    scoreleap_core::reorder_documents(&state, &doc_ids)
+}
+
+#[tauri::command]
+fn delete_document(state: State<'_, AppState>, doc_id: String) -> Result<(), CoreError> {
+    scoreleap_core::delete_document(&state, &doc_id)
+}
+
+#[tauri::command]
+fn rename_document(
+    state: State<'_, AppState>,
+    doc_id: String,
+    name: String,
+) -> Result<(), CoreError> {
+    scoreleap_core::rename_document(&state, &doc_id, &name)
+}
+
+#[tauri::command]
+fn update_piece_info(
+    state: State<'_, AppState>,
+    doc_id: String,
+    title: Option<String>,
+    artist: Option<String>,
+) -> Result<(), CoreError> {
+    scoreleap_core::update_piece_info(&state, &doc_id, title, artist)
+}
+
 #[tauri::command]
 fn get_sequence_notes(
     state: State<'_, AppState>,
@@ -395,15 +465,23 @@ fn get_or_init_transcription(
     });
     let handle2 = app.clone();
     let importer = Arc::new(
-        move |midi_path: &str, display_name: &str| -> Result<String, String> {
+        move |payload: &scoreleap_transcription::ImportPayload| -> Result<String, String> {
             let core_state = handle2.state::<AppState>();
+            // 解析 worker metadata.json 为转录元数据（缺字段/格式不符时降级为 None）
+            let transcription = payload.metadata_json.as_deref().and_then(|j| {
+                serde_json::from_str::<scoreleap_core::TranscriptionMeta>(j).ok()
+            });
             scoreleap_core::import_midi_from_path(
                 &core_state,
-                midi_path,
-                display_name,
+                &payload.midi_path,
+                &payload.display_name,
                 "audio_transcription",
+                transcription,
+                payload.title.clone(),
+                payload.artist.clone(),
             )
-            .map(|s| s.doc_id)
+            // 自动去重命中时返回空 doc_id，前端据此提示「检测到重复曲谱」
+            .map(|s| if s.duplicated { String::new() } else { s.doc_id })
             .map_err(|e| e.to_string())
         },
     );
@@ -592,6 +670,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             import_midi,
             list_documents,
+            list_groups,
+            create_group,
+            rename_group,
+            delete_group,
+            move_document_to_group,
+            reorder_documents,
+            delete_document,
+            rename_document,
+            update_piece_info,
             get_tracks,
             get_sequence_notes,
             compile,

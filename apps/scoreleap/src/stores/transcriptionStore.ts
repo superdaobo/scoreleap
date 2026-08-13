@@ -151,10 +151,13 @@ export const useTranscriptionStore = defineStore('transcription', () => {
           await subscribeTranscriptionCompleted(async (p) => {
             if (job.value?.job_id === p.job_id) {
               job.value.status = 'Completed'
-              job.value.result_doc_id = p.doc_id
+              // 自动去重命中时 doc_id 为空串：不重复导入，仅提示
+              job.value.result_doc_id = p.doc_id || null
               job.value.note_count = p.note_count
               job.value.elapsed_ms = p.elapsed_ms
-              job.value.message = '转录完成，已导入曲谱库'
+              job.value.message = p.doc_id
+                ? '转录完成，已导入曲谱库'
+                : '检测到重复曲谱，已自动跳过导入'
               // Issue #57：完成后拉取最新任务视图，附带 worker 原始输出统计
               // （低音外/可直接演奏/高音外分段），用于区分模型漏高音与编排删除高音。
               try {

@@ -7,7 +7,16 @@ import * as api from '../../services/api'
 vi.mock('../../services/api', () => ({
   importMidi: vi.fn(),
   listDocuments: vi.fn(),
+  listGroups: vi.fn(),
   getTracks: vi.fn(),
+  createGroup: vi.fn(),
+  renameGroup: vi.fn(),
+  deleteGroup: vi.fn(),
+  moveDocumentToGroup: vi.fn(),
+  reorderDocuments: vi.fn(),
+  deleteDocument: vi.fn(),
+  renameDocument: vi.fn(),
+  updatePieceInfo: vi.fn(),
 }))
 
 const SAMPLE_DOCS: import('../../types').DocumentSummary[] = [
@@ -20,6 +29,12 @@ const SAMPLE_DOCS: import('../../types').DocumentSummary[] = [
     duration_ms: 268235,
     bpm_range: [68, 120],
     source_type: 'midi',
+    imported_at: 1700000000000,
+    group_id: null,
+    content_hash: 'hash-1',
+    transcription: null,
+    title: null,
+    artist: null,
   },
   {
     doc_id: 'doc-2',
@@ -30,6 +45,18 @@ const SAMPLE_DOCS: import('../../types').DocumentSummary[] = [
     duration_ms: 4000,
     bpm_range: [120, 120],
     source_type: 'audio_transcription',
+    imported_at: 1700000001000,
+    group_id: null,
+    content_hash: 'hash-2',
+    transcription: {
+      engine: 'scoreleap-transkun-v2',
+      engine_version: '1.0.0',
+      model_file: '2.0.pt',
+      elapsed_ms: 12345,
+      completed_at_ms: 1700000001000,
+    },
+    title: '致爱丽丝',
+    artist: '贝多芬',
   },
 ]
 
@@ -44,6 +71,7 @@ describe('libraryStore', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.mocked(api.listDocuments).mockResolvedValue(SAMPLE_DOCS)
+    vi.mocked(api.listGroups).mockResolvedValue([])
     vi.mocked(api.getTracks).mockResolvedValue(SAMPLE_TRACKS)
   })
 
@@ -104,6 +132,9 @@ describe('libraryStore', () => {
       note_count: 10,
       duration_ms: 1000,
       bpm_range: [60, 120],
+      source_type: 'midi',
+      duplicated: false,
+      duplicate_of: null,
     })
     const store = useLibraryStore()
     await store.importFile('C:/demo.mid')
@@ -111,6 +142,26 @@ describe('libraryStore', () => {
     // 导入后触发重新拉取（后端 list_documents 返回全量）
     expect(api.listDocuments).toHaveBeenCalled()
     expect(store.documents).toHaveLength(2)
+  })
+
+  it('importFile 检测到重复时写入 notice 且不抛错', async () => {
+    vi.mocked(api.importMidi).mockResolvedValue({
+      doc_id: '',
+      name: 'demo.mid',
+      format: '',
+      track_count: 0,
+      note_count: 0,
+      duration_ms: 0,
+      bpm_range: [0, 0],
+      source_type: 'midi',
+      duplicated: true,
+      duplicate_of: 'doc-1',
+    })
+    const store = useLibraryStore()
+    const summary = await store.importFile('C:/demo.mid')
+    expect(summary.duplicated).toBe(true)
+    expect(store.notice).toBe('检测到重复曲谱，已自动跳过导入')
+    expect(store.error).toBeNull()
   })
 
   it('importFile 失败时写入 error 并抛出', async () => {
@@ -121,13 +172,52 @@ describe('libraryStore', () => {
     expect(store.documents).toHaveLength(0)
   })
 
-  it('removeDocument 移除曲谱与启停状态', async () => {
+  it('deleteDocument 调用后端并移除曲谱与启停状态', async () => {
+    vi.mocked(api.deleteDocument).mockResolvedValue(undefined)
     const store = useLibraryStore()
     await store.loadDocuments()
     await store.selectDocument('doc-1')
-    store.removeDocument('doc-1')
+    await store.deleteDocument('doc-1')
+    expect(api.deleteDocument).toHaveBeenCalledWith('doc-1')
     expect(store.documents).toHaveLength(1)
     expect(store.currentDocId).toBeNull()
     expect(store.enabledTracks['doc-1']).toBeUndefined()
+  })
+
+  it('renameDocument 同步更新本地列表', async () => {
+    vi.mocked(api.renameDocument).mockResolvedValue(undefined)
+    const store = useLibraryStore()
+    await store.loadDocuments()
+    await store.renameDocument('doc-1', '新名字')
+    expect(store.documents[0].name).toBe('新名字')
+  })
+
+  it('createGroup 追加分组；deleteGroup 清空组内归属', async () => {
+    vi.mocked(api.createGroup).mockResolvedValue({
+      group_id: 'group-1',
+      name: '练习曲',
+      created_at_ms: 1700000000000,
+    })
+    vi.mocked(api.deleteGroup).mockResolvedValue(undefined)
+    const store = useLibraryStore()
+    await store.loadDocuments()
+    await store.createGroup('练习曲')
+    expect(store.groups).toHaveLength(1)
+    // 把 doc-1 移入分组后删除分组 → 本地归属清空
+    vi.mocked(api.moveDocumentToGroup).mockResolvedValue(undefined)
+    await store.moveToGroup('doc-1', 'group-1')
+    expect(store.documents[0].group_id).toBe('group-1')
+    await store.deleteGroup('group-1')
+    expect(store.groups).toHaveLength(0)
+    expect(store.documents[0].group_id).toBeNull()
+  })
+
+  it('updatePieceInfo 同步更新本地曲目信息', async () => {
+    vi.mocked(api.updatePieceInfo).mockResolvedValue(undefined)
+    const store = useLibraryStore()
+    await store.loadDocuments()
+    await store.updatePieceInfo('doc-1', '标题', null)
+    expect(store.documents[0].title).toBe('标题')
+    expect(store.documents[0].artist).toBeNull()
   })
 })
