@@ -6,6 +6,14 @@ export function formatDuration(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+/** 毫秒时间戳 → 本地日期时间 "YYYY-MM-DD HH:mm" */
+export function formatDateTime(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—'
+  const d = new Date(ms)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 /** 带符号整数（用于移调量等统计展示） */
 export function formatSigned(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`

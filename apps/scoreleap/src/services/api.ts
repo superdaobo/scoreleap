@@ -10,6 +10,7 @@ import type {
   DocumentSummary,
   ForegroundInfo,
   GameProfile,
+  GroupInfo,
   ImportSummary,
   KeymapEntry,
   NoteView,
@@ -30,6 +31,58 @@ export function importMidi(path: string): Promise<ImportSummary> {
 /** 曲谱库列表（命令 list_documents；持久化曲谱库） */
 export function listDocuments(): Promise<DocumentSummary[]> {
   return invoke<DocumentSummary[]>('list_documents')
+}
+
+/** 分组列表（命令 list_groups） */
+export function listGroups(): Promise<GroupInfo[]> {
+  return invoke<GroupInfo[]>('list_groups')
+}
+
+/** 创建分组（命令 create_group） */
+export function createGroup(name: string): Promise<GroupInfo> {
+  return invoke<GroupInfo>('create_group', { name })
+}
+
+/** 重命名分组（命令 rename_group） */
+export function renameGroup(groupId: string, name: string): Promise<GroupInfo> {
+  return invoke<GroupInfo>('rename_group', { groupId, name })
+}
+
+/** 删除分组；组内曲谱回到未分类（命令 delete_group） */
+export function deleteGroup(groupId: string): Promise<void> {
+  return invoke<void>('delete_group', { groupId })
+}
+
+/** 将曲谱移入分组；groupId 传 null 移回未分类（命令 move_document_to_group） */
+export function moveDocumentToGroup(
+  docId: string,
+  groupId: string | null,
+): Promise<void> {
+  return invoke<void>('move_document_to_group', { docId, groupId })
+}
+
+/** 按给定顺序重排曲谱库（命令 reorder_documents；拖拽/上移下移后整体提交） */
+export function reorderDocuments(docIds: string[]): Promise<void> {
+  return invoke<void>('reorder_documents', { docIds })
+}
+
+/** 删除曲谱：磁盘文件 + 索引同步删除（命令 delete_document） */
+export function deleteDocument(docId: string): Promise<void> {
+  return invoke<void>('delete_document', { docId })
+}
+
+/** 重命名曲谱（命令 rename_document） */
+export function renameDocument(docId: string, name: string): Promise<void> {
+  return invoke<void>('rename_document', { docId, name })
+}
+
+/** 更新曲目信息（标题/艺术家；命令 update_piece_info） */
+export function updatePieceInfo(
+  docId: string,
+  title: string | null,
+  artist: string | null,
+): Promise<void> {
+  return invoke<void>('update_piece_info', { docId, title, artist })
 }
 
 /** 卷帘预览音符（命令 get_sequence_notes） */

@@ -631,6 +631,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-encoding"
+version = "2.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
+
+[[package]]
 name = "dbus"
 version = "0.9.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1996,6 +2002,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "lofty"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8bc4717ff10833a623b009e9254ae8667c7a59edc3cfb01c37aeeef4b6d54a7"
+dependencies = [
+ "byteorder",
+ "data-encoding",
+ "flate2",
+ "lofty_attr",
+ "log",
+ "ogg_pager",
+ "paste",
+]
+
+[[package]]
+name = "lofty_attr"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed9983e64b2358522f745c1251924e3ab7252d55637e80f6a0a3de642d6a9efc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2415,6 +2447,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ogg_pager"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87b0bef808533c5890ab77279538212efdbbbd9aa4ef1ccdfcfbf77a42f7e6fa"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2498,6 +2539,12 @@ dependencies = [
  "smallvec",
  "windows-link 0.2.1",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "percent-encoding"
@@ -2789,7 +2836,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3145,7 +3192,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3249,7 +3296,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "scoreleap"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "scoreleap-arranger",
  "scoreleap-core",
@@ -3271,7 +3318,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-arranger"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "scoreleap-game-profile",
  "scoreleap-midi",
@@ -3284,7 +3331,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-audio"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "rubato",
  "serde",
@@ -3295,8 +3342,9 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
+ "hex",
  "midly",
  "scoreleap-arranger",
  "scoreleap-game-profile",
@@ -3306,6 +3354,7 @@ dependencies = [
  "scoreleap-sequence",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-plugin-scoreleap-input",
  "tempfile",
@@ -3317,7 +3366,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-game-profile"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "scoreleap-music-ir",
  "serde",
@@ -3327,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-midi"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "midly",
  "scoreleap-music-ir",
@@ -3336,7 +3385,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-model-manager"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "ed25519-dalek",
  "hex",
@@ -3351,7 +3400,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-music-ir"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -3359,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-scheduler"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "scoreleap-music-ir",
  "scoreleap-sequence",
@@ -3370,7 +3419,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-sequence"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "scoreleap-music-ir",
  "serde",
@@ -3379,7 +3428,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-transcribe"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "midly",
  "ndarray",
@@ -3394,7 +3443,7 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-transcriber-native"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "scoreleap-transcribe",
  "serde",
@@ -3406,8 +3455,9 @@ dependencies = [
 
 [[package]]
 name = "scoreleap-transcription"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
+ "lofty",
  "scoreleap-midi",
  "serde",
  "serde_json",
@@ -4284,7 +4334,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-scoreleap-input"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "scoreleap-music-ir",
  "scoreleap-scheduler",

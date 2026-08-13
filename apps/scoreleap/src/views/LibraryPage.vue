@@ -6,6 +6,9 @@ import { useTranscriptionStore } from '../stores/transcriptionStore'
 import { useModelStore } from '../stores/modelStore'
 import { getAudioFileInfo, pickAudioFile, pickMidiFile } from '../services/api'
 import { formatDuration } from '../utils/format'
+import LibraryDocModals from '../components/LibraryDocModals.vue'
+import LibraryGroupModals from '../components/LibraryGroupModals.vue'
+import type { DocumentSummary, GroupInfo } from '../types'
 
 const router = useRouter()
 const store = useLibraryStore()
@@ -14,7 +17,27 @@ const modelStore = useModelStore()
 const importing = ref(false)
 const dragging = ref(false)
 
+/** 当前视图：全部 / 未分类 / 分组 id */
+const activeView = ref<'all' | 'ungrouped' | string>('all')
+
 const hasDocuments = computed(() => store.documents.length > 0)
+
+/** 当前视图内的曲谱（按全局顺序过滤） */
+const viewDocs = computed<DocumentSummary[]>(() => {
+  if (activeView.value === 'all') return store.documents
+  if (activeView.value === 'ungrouped') {
+    return store.documents.filter((d) => d.group_id === null)
+  }
+  return store.documents.filter((d) => d.group_id === activeView.value)
+})
+
+const ungroupedCount = computed(
+  () => store.documents.filter((d) => d.group_id === null).length,
+)
+
+function groupCount(groupId: string): number {
+  return store.documents.filter((d) => d.group_id === groupId).length
+}
 
 // 转录命令只负责启动异步任务；真正完成导入后再刷新曲谱库。
 watch(
@@ -26,7 +49,7 @@ watch(
 
 // 进入页面时从后端持久化曲谱库加载，并订阅转录事件
 onMounted(() => {
-  void store.loadDocuments()
+  void store.loadAll()
   void txStore.subscribe()
   void txStore.restore()
   void modelStore.subscribe()
@@ -40,6 +63,7 @@ async function chooseFile(): Promise<void> {
     const path = await pickMidiFile()
     if (!path) return
     const summary = await store.importFile(path)
+    if (summary.duplicated) return
     await router.push({ name: 'document', params: { docId: summary.doc_id } })
   } catch {
     // 错误信息已写入 store.error，由错误提示条展示
@@ -73,7 +97,7 @@ async function confirmStart(): Promise<void> {
   await txStore.start(p.path)
 }
 
-/** 完成态：跳转曲谱详情 */
+/** 完成态：跳转曲谱详情（去重跳过时 doc_id 为空，不跳转） */
 function goToDoc(docId: string | null): void {
   if (docId) void router.push({ name: 'document', params: { docId } })
 }
@@ -98,10 +122,142 @@ function onDrop(e: DragEvent): void {
   // Tauri 2 中拖拽路径需通过事件获取；当前版本拖拽区仅作视觉引导
   store.error = '请点击「选择 MIDI 文件」按钮进行导入（拖拽导入将在后续版本支持）'
 }
+
+// ---------------------------------------------------------------------------
+// 分组管理（弹窗交互在 LibraryGroupModals / LibraryDocModals 子组件）
+// ---------------------------------------------------------------------------
+
+const newGroupOpen = ref(false)
+/** 待重命名的分组（null = 弹窗关闭） */
+const renameGroupTarget = ref<GroupInfo | null>(null)
+/** 待删除确认的分组（null = 弹窗关闭） */
+const deleteGroupTarget = ref<GroupInfo | null>(null)
+
+function openRenameGroup(groupId: string): void {
+  const g = store.groups.find((x) => x.group_id === groupId)
+  if (g) renameGroupTarget.value = g
+}
+
+function openDeleteGroup(groupId: string): void {
+  const g = store.groups.find((x) => x.group_id === groupId)
+  if (g) deleteGroupTarget.value = g
+}
+
+/** 新建分组成功：切换视图并提示 */
+function onGroupCreated(group: GroupInfo): void {
+  newGroupOpen.value = false
+  activeView.value = group.group_id
+  store.notice = `已创建分组「${group.name}」`
+}
+
+function onGroupRenamed(): void {
+  renameGroupTarget.value = null
+  store.notice = '分组已重命名'
+}
+
+function onGroupDeleted(): void {
+  const t = deleteGroupTarget.value
+  if (t && activeView.value === t.group_id) activeView.value = 'all'
+  deleteGroupTarget.value = null
+  store.notice = t ? `已删除分组「${t.name}」，组内曲谱回到未分类` : '分组已删除'
+}
+
+// ---------------------------------------------------------------------------
+// 曲谱管理：删除 / 重命名 / 移动分组
+// ---------------------------------------------------------------------------
+
+const deleteDocTarget = ref<DocumentSummary | null>(null)
+const renameDocTarget = ref<DocumentSummary | null>(null)
+const moveDocTarget = ref<DocumentSummary | null>(null)
+
+function openDeleteDoc(doc: DocumentSummary): void {
+  deleteDocTarget.value = doc
+}
+
+function openRenameDoc(doc: DocumentSummary): void {
+  renameDocTarget.value = doc
+}
+
+function openMoveDoc(doc: DocumentSummary): void {
+  moveDocTarget.value = doc
+}
+
+function onDocRenamed(): void {
+  renameDocTarget.value = null
+  store.notice = '曲谱已重命名'
+}
+
+function onDocDeleted(): void {
+  const t = deleteDocTarget.value
+  deleteDocTarget.value = null
+  store.notice = t ? `已删除「${t.name}」` : '曲谱已删除'
+}
+
+function onDocMoved(toGroup: boolean): void {
+  moveDocTarget.value = null
+  store.notice = toGroup ? '已移动到分组' : '已移回未分类'
+}
+
+// ---------------------------------------------------------------------------
+// 排序：拖拽 + 上移/下移
+// ---------------------------------------------------------------------------
+
+const dragDocId = ref<string | null>(null)
+
+function onCardDragStart(docId: string, e: DragEvent): void {
+  dragDocId.value = docId
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+
+function onCardDragOver(_targetId: string, e: DragEvent): void {
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+}
+
+/** 拖拽放置：把拖拽源移动到目标位置（视图内） */
+function onCardDrop(targetId: string): void {
+  const from = dragDocId.value
+  dragDocId.value = null
+  if (!from || from === targetId) return
+  const ids = viewDocs.value.map((d) => d.doc_id)
+  const fromIdx = ids.indexOf(from)
+  const toIdx = ids.indexOf(targetId)
+  if (fromIdx < 0 || toIdx < 0) return
+  ids.splice(fromIdx, 1)
+  ids.splice(toIdx, 0, from)
+  void store.reorderInView(ids)
+}
+
+/** 上移/下移：交换视图内相邻两项并提交 */
+function moveCard(docId: string, offset: -1 | 1): void {
+  const ids = viewDocs.value.map((d) => d.doc_id)
+  const idx = ids.indexOf(docId)
+  const target = idx + offset
+  if (idx < 0 || target < 0 || target >= ids.length) return
+  ;[ids[idx], ids[target]] = [ids[target], ids[idx]]
+  void store.reorderInView(ids)
+}
 </script>
 
 <template>
   <div>
+    <!-- Banner：成功提示 -->
+    <div
+      v-if="store.notice"
+      class="mb-4 flex items-center gap-3 border border-secondary bg-secondary/10 px-4 py-3 text-secondary"
+      role="status"
+    >
+      <span class="material-symbols-outlined">check_circle</span>
+      <span class="flex-1 font-code-sm text-code-sm">{{ store.notice }}</span>
+      <button
+        type="button"
+        class="text-secondary hover:opacity-80"
+        @click="store.clearNotice()"
+      >
+        <span class="material-symbols-outlined text-[18px]">close</span>
+      </button>
+    </div>
+
     <!-- Banner：错误提示条 -->
     <div
       v-if="store.error || txStore.error"
@@ -112,7 +268,7 @@ function onDrop(e: DragEvent): void {
       <button
         type="button"
         class="text-error hover:opacity-80"
-        @click="store.error = null; txStore.clearError()"
+        @click="store.clearError(); txStore.clearError()"
       >
         <span class="material-symbols-outlined text-[18px]">close</span>
       </button>
@@ -233,8 +389,9 @@ function onDrop(e: DragEvent): void {
             v-else-if="txStore.job.status === 'Completed'"
             class="flex items-center gap-2 font-code-sm text-code-sm"
           >
-            <span class="text-secondary">✓ 已导入</span>
+            <span class="text-secondary">✓ {{ txStore.job.result_doc_id ? '已导入' : '已跳过重复' }}</span>
             <button
+              v-if="txStore.job.result_doc_id"
               type="button"
               class="rounded bg-primary-container px-3 py-1.5 font-code-sm text-code-sm text-on-primary-container hover:bg-primary-fixed"
               @click="goToDoc(txStore.job.result_doc_id)"
@@ -275,6 +432,15 @@ function onDrop(e: DragEvent): void {
           <button
             v-if="hasDocuments"
             type="button"
+            class="flex items-center gap-2 rounded border border-outline-variant px-3 py-2 font-label-caps text-label-caps text-on-surface transition-colors hover:border-primary hover:text-primary"
+            @click="newGroupOpen = true"
+          >
+            <span class="material-symbols-outlined text-[16px]">create_new_folder</span>
+            新建分组
+          </button>
+          <button
+            v-if="hasDocuments"
+            type="button"
             class="flex items-center gap-2 rounded border border-outline-variant px-3 py-2 font-label-caps text-label-caps text-on-surface transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
             :disabled="txStore.starting || txStore.running"
             @click="chooseAudio"
@@ -294,6 +460,79 @@ function onDrop(e: DragEvent): void {
           </button>
         </div>
       </div>
+
+      <!-- 分组导航 -->
+      <nav
+        v-if="hasDocuments"
+        class="col-span-12 flex flex-wrap items-center gap-2"
+        aria-label="曲谱库分组"
+      >
+        <button
+          type="button"
+          class="flex items-center gap-2 border px-3 py-1.5 font-code-sm text-code-sm transition-colors"
+          :class="activeView === 'all'
+            ? 'border-primary-container bg-primary-container/15 text-primary-container'
+            : 'border-outline-variant text-on-surface-variant hover:border-primary hover:text-primary'"
+          @click="activeView = 'all'"
+        >
+          全部
+          <span class="rounded bg-surface-container-high px-1.5 py-0.5 text-xs">{{
+            store.documents.length
+          }}</span>
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-2 border px-3 py-1.5 font-code-sm text-code-sm transition-colors"
+          :class="activeView === 'ungrouped'
+            ? 'border-primary-container bg-primary-container/15 text-primary-container'
+            : 'border-outline-variant text-on-surface-variant hover:border-primary hover:text-primary'"
+          @click="activeView = 'ungrouped'"
+        >
+          未分类
+          <span class="rounded bg-surface-container-high px-1.5 py-0.5 text-xs">{{
+            ungroupedCount
+          }}</span>
+        </button>
+        <div
+          v-for="group in store.groups"
+          :key="group.group_id"
+          class="group relative"
+        >
+          <button
+            type="button"
+            class="flex items-center gap-2 border px-3 py-1.5 font-code-sm text-code-sm transition-colors"
+            :class="activeView === group.group_id
+              ? 'border-primary-container bg-primary-container/15 text-primary-container'
+              : 'border-outline-variant text-on-surface-variant hover:border-primary hover:text-primary'"
+            @click="activeView = group.group_id"
+          >
+            {{ group.name }}
+            <span class="rounded bg-surface-container-high px-1.5 py-0.5 text-xs">{{
+              groupCount(group.group_id)
+            }}</span>
+          </button>
+          <div
+            class="absolute -top-2 right-1 hidden items-center gap-1 rounded border border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-lg shadow-black/50 group-hover:flex"
+          >
+            <button
+              type="button"
+              class="p-0.5 text-on-surface-variant hover:text-primary"
+              title="重命名分组"
+              @click="openRenameGroup(group.group_id)"
+            >
+              <span class="material-symbols-outlined text-[14px]">edit</span>
+            </button>
+            <button
+              type="button"
+              class="p-0.5 text-on-surface-variant hover:text-error"
+              title="删除分组"
+              @click="openDeleteGroup(group.group_id)"
+            >
+              <span class="material-symbols-outlined text-[14px]">close</span>
+            </button>
+          </div>
+        </div>
+      </nav>
 
       <!-- 空态 -->
       <div v-if="!hasDocuments" class="col-span-12 mt-2">
@@ -317,13 +556,85 @@ function onDrop(e: DragEvent): void {
         </div>
       </div>
 
+      <!-- 分组空态 -->
+      <div v-else-if="viewDocs.length === 0" class="col-span-12 mt-2">
+        <div
+          class="flex flex-col items-center justify-center border border-dashed border-outline-variant px-6 py-12 text-center"
+        >
+          <span class="material-symbols-outlined text-on-surface-variant text-[40px]"
+            >folder_open</span
+          >
+          <p class="mt-3 text-sm text-on-surface-variant">
+            {{
+              activeView === 'ungrouped'
+                ? '未分类中暂无曲谱'
+                : '该分组暂无曲谱，可通过卡片操作将曲谱移入'
+            }}
+          </p>
+        </div>
+      </div>
+
       <!-- 曲谱列表 -->
       <template v-else>
         <article
-          v-for="doc in store.documents"
+          v-for="doc in viewDocs"
           :key="doc.doc_id"
-          class="bento-item col-span-12 flex flex-col gap-4 rounded-lg p-5 md:col-span-6 lg:col-span-4"
+          class="bento-item group relative col-span-12 flex flex-col gap-4 rounded-lg p-5 transition-colors md:col-span-6 lg:col-span-4"
+          :class="dragDocId === doc.doc_id ? 'border-primary opacity-60' : ''"
+          draggable="true"
+          @dragstart="onCardDragStart(doc.doc_id, $event)"
+          @dragover="onCardDragOver(doc.doc_id, $event)"
+          @drop="onCardDrop(doc.doc_id)"
+          @dragend="dragDocId = null"
         >
+          <!-- 悬停操作栏 -->
+          <div
+            class="absolute right-3 top-3 z-10 hidden items-center gap-1 rounded border border-outline-variant bg-surface-container-lowest px-1 py-0.5 shadow-lg shadow-black/50 group-hover:flex"
+            @click.stop
+          >
+            <button
+              type="button"
+              class="p-0.5 text-on-surface-variant hover:text-primary"
+              title="上移"
+              :disabled="viewDocs[0]?.doc_id === doc.doc_id"
+              @click="moveCard(doc.doc_id, -1)"
+            >
+              <span class="material-symbols-outlined text-[15px]">arrow_upward</span>
+            </button>
+            <button
+              type="button"
+              class="p-0.5 text-on-surface-variant hover:text-primary"
+              title="下移"
+              :disabled="viewDocs[viewDocs.length - 1]?.doc_id === doc.doc_id"
+              @click="moveCard(doc.doc_id, 1)"
+            >
+              <span class="material-symbols-outlined text-[15px]">arrow_downward</span>
+            </button>
+            <button
+              type="button"
+              class="p-0.5 text-on-surface-variant hover:text-primary"
+              title="移动到分组"
+              @click="openMoveDoc(doc)"
+            >
+              <span class="material-symbols-outlined text-[15px]">drive_file_move</span>
+            </button>
+            <button
+              type="button"
+              class="p-0.5 text-on-surface-variant hover:text-primary"
+              title="重命名"
+              @click="openRenameDoc(doc)"
+            >
+              <span class="material-symbols-outlined text-[15px]">edit</span>
+            </button>
+            <button
+              type="button"
+              class="p-0.5 text-on-surface-variant hover:text-error"
+              title="删除"
+              @click="openDeleteDoc(doc)"
+            >
+              <span class="material-symbols-outlined text-[15px]">delete</span>
+            </button>
+          </div>
           <RouterLink :to="{ name: 'document', params: { docId: doc.doc_id } }">
             <div class="flex items-start justify-between">
               <div
@@ -345,6 +656,12 @@ function onDrop(e: DragEvent): void {
               </h4>
               <p class="font-code-sm text-code-sm text-on-surface-variant">
                 {{ doc.format }}
+              </p>
+              <p
+                v-if="doc.title || doc.artist"
+                class="mt-1 truncate text-xs text-secondary"
+              >
+                {{ [doc.title, doc.artist].filter(Boolean).join(' — ') }}
               </p>
             </div>
             <div
@@ -380,6 +697,32 @@ function onDrop(e: DragEvent): void {
       </template>
     </div>
 
+    <!-- 分组管理弹窗（新建/重命名/删除） -->
+    <LibraryGroupModals
+      :create-open="newGroupOpen"
+      :rename-target="renameGroupTarget"
+      :delete-target="deleteGroupTarget"
+      @close-create="newGroupOpen = false"
+      @close-rename="renameGroupTarget = null"
+      @close-delete="deleteGroupTarget = null"
+      @created="onGroupCreated"
+      @renamed="onGroupRenamed"
+      @deleted="onGroupDeleted"
+    />
+
+    <!-- 曲谱管理弹窗（重命名/删除/移动） -->
+    <LibraryDocModals
+      :rename-target="renameDocTarget"
+      :delete-target="deleteDocTarget"
+      :move-target="moveDocTarget"
+      @close-rename="renameDocTarget = null"
+      @close-delete="deleteDocTarget = null"
+      @close-move="moveDocTarget = null"
+      @renamed="onDocRenamed"
+      @deleted="onDocDeleted"
+      @moved="onDocMoved"
+    />
+
     <!-- 转录确认弹窗 -->
     <div
       v-if="txStore.pendingConfirm"
@@ -405,6 +748,7 @@ function onDrop(e: DragEvent): void {
           <li v-if="txStore.engine === 'fast'">
             • 当前预设：{{ txStore.preset === 'balanced' ? '均衡' : txStore.preset === 'detail' ? '细节' : '降噪' }}（可在设置中调整）。
           </li>
+          <li>• 若检测到重复曲谱（同一首歌转录两次），将自动跳过导入。</li>
         </ul>
         <div class="mt-6 flex justify-end gap-3">
           <button

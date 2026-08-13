@@ -11,6 +11,7 @@ pub use job::{JobStatus, TranscriptionJob};
 pub use protocol::WorkerMsg;
 pub use raw_stats::RawTranscriptionStats;
 pub use service::{
-    TranscriptionEngine, TranscriptionEvent, TranscriptionOptions, TranscriptionPreset,
-    TranscriptionService, TranscriptionWorkers, WorkerSpec, ALLOWED_EXTENSIONS, MAX_FILE_BYTES,
+    ImportPayload, TranscriptionEngine, TranscriptionEvent, TranscriptionOptions,
+    TranscriptionPreset, TranscriptionService, TranscriptionWorkers, WorkerSpec,
+    ALLOWED_EXTENSIONS, MAX_FILE_BYTES,
 };

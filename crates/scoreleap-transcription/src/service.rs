@@ -9,10 +9,38 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use lofty::file::TaggedFileExt;
+use lofty::tag::Accessor;
+
 use crate::error::{TranscriptionError, TranscriptionErrorCode};
 use crate::job::{JobStatus, TranscriptionJob};
 use crate::protocol::WorkerMsg;
 use crate::raw_stats::RawTranscriptionStats;
+
+/// 读取音频文件元数据标签（标题/艺术家；ID3/FLAC/Vorbis）。
+/// 读取失败或无标签返回 (None, None)，不阻断转录流程。
+fn read_audio_tags(path: &Path) -> (Option<String>, Option<String>) {
+    let Ok(probe) = lofty::probe::Probe::open(path) else {
+        return (None, None);
+    };
+    let Ok(file) = probe.read() else {
+        return (None, None);
+    };
+    let mut title = None;
+    let mut artist = None;
+    for tag in file.tags() {
+        if title.is_none() {
+            title = tag.title().map(|s| s.to_string());
+        }
+        if artist.is_none() {
+            artist = tag.artist().map(|s| s.to_string());
+        }
+        if title.is_some() && artist.is_some() {
+            break;
+        }
+    }
+    (title, artist)
+}
 
 /// 转录引擎。快速模式使用现有 Basic Pitch ONNX；高质量模式使用安装包内置 Transkun。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -186,14 +214,27 @@ pub enum TranscriptionEvent {
     },
 }
 
-type EventFn = Arc<dyn Fn(TranscriptionEvent) + Send + Sync>;
-type ImporterFn = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
+pub(crate) type EventFn = Arc<dyn Fn(TranscriptionEvent) + Send + Sync>;
 
-struct ActiveJob {
-    job: TranscriptionJob,
-    task_dir: PathBuf,
-    child: Arc<Mutex<Option<Child>>>,
-    cancelled: Arc<AtomicBool>,
+/// 转录结果导入曲谱库的载荷（转录元数据与源音频标签随曲谱持久化）。
+#[derive(Debug, Clone)]
+pub struct ImportPayload {
+    pub midi_path: String,
+    pub display_name: String,
+    /// worker 写入的 metadata.json 原文（读取失败为 None；解析由曲谱库侧负责）。
+    pub metadata_json: Option<String>,
+    /// 源音频文件元数据标签（ID3/FLAC/Vorbis）。
+    pub title: Option<String>,
+    pub artist: Option<String>,
+}
+
+type ImporterFn = Arc<dyn Fn(&ImportPayload) -> Result<String, String> + Send + Sync>;
+
+pub(crate) struct ActiveJob {
+    pub(crate) job: TranscriptionJob,
+    pub(crate) task_dir: PathBuf,
+    pub(crate) child: Arc<Mutex<Option<Child>>>,
+    pub(crate) cancelled: Arc<AtomicBool>,
 }
 
 /// 转录服务（单任务并发；第二个任务返回 TRANSCRIPTION_BUSY）。
@@ -368,6 +409,8 @@ impl TranscriptionService {
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "audio.mp3".into());
+        // 源音频元数据标签（标题/艺术家），随转录结果持久化到曲谱库
+        let (tag_title, tag_artist) = read_audio_tags(Path::new(input_path));
 
         let jobs_root = self.data_dir.join("jobs");
         std::fs::create_dir_all(&jobs_root).map_err(|e| {
@@ -466,6 +509,8 @@ impl TranscriptionService {
                     result_doc_id: None,
                     error_code: None,
                     error_message: None,
+                    title: tag_title,
+                    artist: tag_artist,
                     raw_stats: None,
                 },
                 task_dir,
@@ -496,8 +541,8 @@ impl TranscriptionService {
                         continue;
                     }
                     match WorkerMsg::parse_line(line) {
-                        Ok(msg) => handle_worker_msg(
-                            &WorkerMessageContext {
+                        Ok(msg) => crate::protocol::handle_worker_msg(
+                            &crate::protocol::WorkerMessageContext {
                                 inner: &inner,
                                 on_event: &on_event,
                                 last_code: &last_code,
@@ -635,13 +680,24 @@ impl TranscriptionService {
                         finish_job(&inner, &on_event, &jid, job);
                         return;
                     }
-                    // 导入曲谱库（共享入口）
+                    // 导入曲谱库（共享入口）；转录元数据与源音频标签随曲谱持久化
                     let base = Path::new(&job.source_name)
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_else(|| "转录曲谱".into());
                     let display_name = format!("{base}（音频转录）");
-                    match importer(&midi_path, &display_name) {
+                    let metadata_json = job
+                        .metadata_path
+                        .as_deref()
+                        .and_then(|p| std::fs::read_to_string(p).ok());
+                    let payload = ImportPayload {
+                        midi_path: midi_path.clone(),
+                        display_name,
+                        metadata_json,
+                        title: job.title.clone(),
+                        artist: job.artist.clone(),
+                    };
+                    match importer(&payload) {
                         Ok(doc_id) => {
                             job.status = JobStatus::Completed;
                             job.result_doc_id = Some(doc_id.clone());
@@ -702,7 +758,8 @@ impl TranscriptionService {
                     let protocol_message = last_msg.lock().unwrap().clone().or_else(|| {
                         (code == 0).then(|| "Worker 未返回有效 result 消息".to_string())
                     });
-                    let (code, message) = map_exit_code(code, &protocol_code, &protocol_message);
+                    let (code, message) =
+                        crate::protocol::map_exit_code(code, &protocol_code, &protocol_message);
                     job.status = JobStatus::Failed;
                     job.error_code = Some(code.to_string());
                     job.error_message = Some(message.clone());
@@ -768,65 +825,7 @@ impl TranscriptionService {
     }
 }
 
-/// 退出码 → 结构化错误码（Worker 契约）。
-fn map_exit_code(
-    code: i32,
-    last_code: &Option<String>,
-    last_msg: &Option<String>,
-) -> (String, String) {
-    // Worker 已通过 JSONL 给出结构化错误时，以协议内容为准，避免退出码降级信息。
-    if let Some(worker_code) = last_code {
-        return (
-            worker_code.clone(),
-            last_msg
-                .clone()
-                .unwrap_or_else(|| "转录组件返回错误".into()),
-        );
-    }
-    let mapped = match code {
-        2 => Some((
-            TranscriptionErrorCode::WorkerProtocolError,
-            "Worker 参数错误".into(),
-        )),
-        3 => Some((
-            TranscriptionErrorCode::InvalidAudioPath,
-            "Worker 输入错误".into(),
-        )),
-        4 => Some((
-            TranscriptionErrorCode::AudioDecodeFailed,
-            "音频解码失败".into(),
-        )),
-        5 => Some((
-            TranscriptionErrorCode::ModelLoadFailed,
-            "模型加载失败".into(),
-        )),
-        6 => Some((
-            TranscriptionErrorCode::InferenceFailed,
-            "音符识别失败".into(),
-        )),
-        7 => Some((
-            TranscriptionErrorCode::MidiWriteFailed,
-            "MIDI 写入失败".into(),
-        )),
-        8 => Some((TranscriptionErrorCode::JobCancelled, "任务已取消".into())),
-        9 => Some((
-            TranscriptionErrorCode::InternalError,
-            "Worker 内部错误".into(),
-        )),
-        _ => None,
-    };
-    mapped
-        .map(|(code, message)| (code.as_str().into(), message))
-        .unwrap_or_else(|| {
-            (
-                TranscriptionErrorCode::WorkerExitedUnexpectedly
-                    .as_str()
-                    .into(),
-                format!("Worker 异常退出（退出码 {code}）"),
-            )
-        })
-}
-
+/// 将失败任务发布为终态并发出 Error 事件。
 fn finish_job(
     inner: &Mutex<Option<ActiveJob>>,
     on_event: &EventFn,
@@ -850,104 +849,4 @@ fn finish_job(
             .clone()
             .unwrap_or_else(|| "转录失败".into()),
     });
-}
-
-struct WorkerMessageContext<'a> {
-    inner: &'a Mutex<Option<ActiveJob>>,
-    on_event: &'a EventFn,
-    last_code: &'a Mutex<Option<String>>,
-    last_msg: &'a Mutex<Option<String>>,
-    saw_result: &'a AtomicBool,
-    job_id: &'a str,
-    expected_request_id: &'a str,
-}
-
-fn handle_worker_msg(context: &WorkerMessageContext<'_>, msg: WorkerMsg) {
-    if msg.schema_version != Some(1)
-        || msg.request_id.as_deref() != Some(context.expected_request_id)
-    {
-        *context.last_code.lock().unwrap() =
-            Some(TranscriptionErrorCode::WorkerProtocolError.as_str().into());
-        *context.last_msg.lock().unwrap() = Some("Worker schema_version 或 request_id 无效".into());
-        return;
-    }
-    match msg.msg_type.as_str() {
-        "ready" => {
-            if let Some(v) = msg.worker_version {
-                let mut guard = context.inner.lock().unwrap();
-                if let Some(a) = guard.as_mut() {
-                    if a.job.job_id == context.job_id {
-                        a.job.message = format!("Worker {v} 就绪");
-                    }
-                }
-            }
-        }
-        "stage" => {
-            let stage = msg.stage.unwrap_or_default();
-            let message = msg.message.unwrap_or_default();
-            let status = match stage.as_str() {
-                "validating_input" => JobStatus::ValidatingInput,
-                "loading_model" => JobStatus::LoadingModel,
-                "transcribing" => JobStatus::Transcribing,
-                "writing_midi" => JobStatus::WritingMidi,
-                _ => JobStatus::Starting,
-            };
-            {
-                let mut guard = context.inner.lock().unwrap();
-                if let Some(a) = guard.as_mut() {
-                    if a.job.job_id == context.job_id {
-                        a.job.status = status;
-                        a.job.stage = stage.clone();
-                        a.job.message = message.clone();
-                    }
-                }
-            }
-            (context.on_event)(TranscriptionEvent::Stage {
-                job_id: context.job_id.into(),
-                stage,
-                message,
-            });
-        }
-        "result" => {
-            let mut guard = context.inner.lock().unwrap();
-            if let Some(a) = guard.as_mut() {
-                if a.job.job_id == context.job_id {
-                    let paths_match = msg.midi_path.as_deref() == a.job.midi_path.as_deref()
-                        && msg.metadata_path.as_deref() == a.job.metadata_path.as_deref();
-                    if !paths_match || msg.elapsed_ms.is_none() || msg.note_count.is_none() {
-                        *context.last_code.lock().unwrap() =
-                            Some(TranscriptionErrorCode::WorkerProtocolError.as_str().into());
-                        *context.last_msg.lock().unwrap() =
-                            Some("Worker result 字段缺失或输出路径不匹配".into());
-                        return;
-                    }
-                    a.job.note_count = msg.note_count;
-                    a.job.elapsed_ms = msg.elapsed_ms.unwrap_or(0);
-                    context.saw_result.store(true, Ordering::Release);
-                }
-            }
-        }
-        "error" => {
-            *context.last_code.lock().unwrap() = Some(
-                msg.code
-                    .clone()
-                    .filter(|value| !value.trim().is_empty())
-                    .unwrap_or_else(|| TranscriptionErrorCode::WorkerProtocolError.as_str().into()),
-            );
-            *context.last_msg.lock().unwrap() = msg
-                .message
-                .clone()
-                .or(msg.detail.clone())
-                .or_else(|| Some("Worker 返回了未说明的错误".into()));
-            tracing::warn!(
-                job_id = context.job_id,
-                "worker-error: {:?} {:?}",
-                msg.code,
-                msg.message
-            );
-        }
-        other => {
-            tracing::debug!(job_id = context.job_id, "忽略未知 Worker 消息类型: {other}");
-        }
-    }
 }

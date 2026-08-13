@@ -7,7 +7,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 const router = useRouter()
 const settings = useSettingsStore()
 const agreed = ref(false)
-const appVersion = ref('0.3.1')
+const appVersion = ref('0.3.2')
 
 function acceptAndContinue(): void {
   if (!agreed.value) return

@@ -12,6 +12,30 @@ export interface ImportSummary {
   note_count: number
   duration_ms: number
   bpm_range: [number, number]
+  /** 来源类型：midi（直接导入）/ audio_transcription（音频转录） */
+  source_type: string
+  /** 是否检测为重复曲谱并跳过导入（此时 doc_id 为空串） */
+  duplicated: boolean
+  /** 被判定重复的已有曲谱 doc_id（duplicated 时有效） */
+  duplicate_of: string | null
+}
+
+/** 转录元数据（随曲谱持久化；来自 worker metadata.json） */
+export interface TranscriptionMetaView {
+  engine: string
+  engine_version: string
+  model_file: string
+  /** 转录耗时（毫秒） */
+  elapsed_ms: number
+  /** 转录完成时间（毫秒时间戳） */
+  completed_at_ms: number
+}
+
+/** 曲谱库分组（list_groups 返回值） */
+export interface GroupInfo {
+  group_id: string
+  name: string
+  created_at_ms: number
 }
 
 /** 曲谱库条目摘要（list_documents 返回值；重启后从后端持久化曲谱库读取） */
@@ -25,6 +49,18 @@ export interface DocumentSummary {
   bpm_range: [number, number]
   /** 来源类型：midi（直接导入）/ audio_transcription（音频转录） */
   source_type: string
+  /** 导入时间（毫秒时间戳） */
+  imported_at: number
+  /** 所属分组；null = 未分类 */
+  group_id: string | null
+  /** MIDI 内容指纹（SHA-256，自动去重用） */
+  content_hash: string | null
+  /** 转录元数据（仅音频转录曲谱可能有；旧曲谱为 null） */
+  transcription: TranscriptionMetaView | null
+  /** 曲目标题（音频标签自动读取或手动编辑） */
+  title: string | null
+  /** 曲目艺术家 */
+  artist: string | null
 }
 
 /** 转录任务视图（命令 get_audio_transcription_status；camelCase 由 Tauri 转换） */

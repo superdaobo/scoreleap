@@ -56,6 +56,9 @@ pub struct TranscriptionJob {
     pub result_doc_id: Option<String>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
+    /// 源音频文件元数据标签（标题/艺术家；读取失败或缺失为 None）。
+    pub title: Option<String>,
+    pub artist: Option<String>,
     /// 转录原始输出统计（Issue #57：区分模型漏高音与编排删除高音）。
     pub raw_stats: Option<crate::raw_stats::RawTranscriptionStats>,
 }

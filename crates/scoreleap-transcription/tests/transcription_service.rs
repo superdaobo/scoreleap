@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use scoreleap_transcription::{
-    JobStatus, TranscriptionEngine, TranscriptionErrorCode, TranscriptionEvent,
+    ImportPayload, JobStatus, TranscriptionEngine, TranscriptionErrorCode, TranscriptionEvent,
     TranscriptionOptions, TranscriptionPreset, TranscriptionService, TranscriptionWorkers,
     WorkerSpec,
 };
@@ -78,10 +78,10 @@ fn setup(worker_ps1: &str) -> Harness {
             None,
         ),
         Arc::new(move |e| ev.lock().unwrap().push(e)),
-        Arc::new(move |midi, name| {
+        Arc::new(move |payload: &ImportPayload| {
             im.lock()
                 .unwrap()
-                .push((midi.to_string(), name.to_string()));
+                .push((payload.midi_path.clone(), payload.display_name.clone()));
             Ok("doc-transcribed".into())
         }),
     );
@@ -138,10 +138,10 @@ exit 0
             high_quality: Some(worker),
         },
         Arc::new(move |event| ev.lock().unwrap().push(event)),
-        Arc::new(move |midi, name| {
+        Arc::new(move |payload: &ImportPayload| {
             im.lock()
                 .unwrap()
-                .push((midi.to_string(), name.to_string()));
+                .push((payload.midi_path.clone(), payload.display_name.clone()));
             Ok("doc-high-quality".into())
         }),
     );

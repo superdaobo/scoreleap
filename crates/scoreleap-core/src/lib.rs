@@ -10,9 +10,17 @@ use scoreleap_scheduler::{
 use scoreleap_sequence::{CompiledSequence, PlaybackCommand, PlaybackState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
+
+/// 曲谱库模块：清单持久化、分组、排序、删除/重命名、自动去重与曲目信息。
+mod library;
+pub use library::{
+    create_group, delete_document, delete_group, import_midi, import_midi_from_path,
+    list_documents, list_groups, move_document_to_group, rename_document, rename_group,
+    reorder_documents, update_piece_info, DocumentSummary, GroupInfo, ImportMeta, ImportSummary,
+    ManifestEntry, TranscriptionMeta,
+};
 
 /// 错误类型。
 #[derive(Debug, thiserror::Error)]
@@ -67,56 +75,6 @@ pub struct NoteView {
     pub duration_us: i64,
 }
 
-/// 曲谱库条目摘要。
-#[derive(Debug, Clone, Serialize)]
-pub struct DocumentSummary {
-    pub doc_id: String,
-    pub name: String,
-    pub format: String,
-    pub track_count: usize,
-    pub note_count: usize,
-    pub duration_ms: i64,
-    pub bpm_range: (f64, f64),
-    /// 来源类型：midi / audio_transcription（serde default 向后兼容）。
-    #[serde(default = "default_source_type")]
-    pub source_type: String,
-}
-
-/// manifest 持久化条目。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ManifestEntry {
-    pub doc_id: String,
-    pub name: String,
-    pub format: String,
-    pub track_count: usize,
-    pub note_count: usize,
-    pub duration_ms: i64,
-    pub bpm_range: (f64, f64),
-    pub imported_at: u64,
-    /// 来源类型：midi / audio_transcription（旧 manifest 缺省 = midi）。
-    #[serde(default = "default_source_type")]
-    pub source_type: String,
-}
-
-/// 导入结果摘要。
-#[derive(Debug, Clone, Serialize)]
-pub struct ImportSummary {
-    pub doc_id: String,
-    pub name: String,
-    pub format: String,
-    pub track_count: usize,
-    pub note_count: usize,
-    pub duration_ms: i64,
-    pub bpm_range: (f64, f64),
-    /// 来源类型：midi / audio_transcription。
-    #[serde(default = "default_source_type")]
-    pub source_type: String,
-}
-
-fn default_source_type() -> String {
-    "midi".into()
-}
-
 /// 轨道摘要。
 #[derive(Debug, Clone, Serialize)]
 pub struct TrackSummary {
@@ -146,143 +104,6 @@ pub struct PlaybackStatus {
 // ---------------------------------------------------------------------------
 // 业务逻辑（命令适配层调用）
 // ---------------------------------------------------------------------------
-
-/// 导入 MIDI 文件（解析在后台线程执行）。来源类型为 midi。
-pub fn import_midi(state: &AppState, path: String) -> Result<ImportSummary, CoreError> {
-    let name = std::path::Path::new(&path)
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "untitled".into());
-    import_midi_from_path(state, &path, &name, "midi")
-}
-
-/// 共享 MIDI 导入入口：直接导入的 MIDI 与转录生成的 MIDI 均经此进入曲谱库。
-/// `display_name` 用于曲谱库显示名；`source_type` 为 midi 或 audio_transcription。
-pub fn import_midi_from_path(
-    state: &AppState,
-    path: &str,
-    display_name: &str,
-    source_type: &str,
-) -> Result<ImportSummary, CoreError> {
-    let bytes =
-        std::fs::read(path).map_err(|e| CoreError::Invalid(format!("读取文件失败: {e}")))?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(scoreleap_midi::parse_midi(&bytes));
-    });
-    let doc = rx
-        .recv()
-        .map_err(|_| CoreError::Invalid("解析线程失败".into()))?
-        .map_err(CoreError::from)?;
-    let doc_id = format!("doc-{}", uuid::Uuid::new_v4());
-    let summary = ImportSummary {
-        doc_id: doc_id.clone(),
-        note_count: doc.note_count(),
-        duration_ms: doc.duration_us / 1000,
-        format: format!("{:?}", doc.format),
-        track_count: doc.tracks.len(),
-        bpm_range: doc.bpm_range(),
-        name: display_name.to_string(),
-        source_type: source_type.to_string(),
-    };
-    state.documents.lock().unwrap().insert(doc_id.clone(), doc);
-
-    // 持久化：复制源文件到曲谱库并更新 manifest（失败不阻断导入，仅记录日志）
-    if let Err(e) = persist_import(state, &doc_id, path, &summary) {
-        tracing::warn!("曲谱库持久化失败（本次会话仍可用）: {e}");
-    }
-
-    Ok(summary)
-}
-
-/// 将导入的 MIDI 复制到曲谱库并更新 manifest（原子写）。
-fn persist_import(
-    state: &AppState,
-    doc_id: &str,
-    src_path: &str,
-    summary: &ImportSummary,
-) -> Result<(), CoreError> {
-    let dir = state.library_dir.lock().unwrap().clone();
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| CoreError::Invalid(format!("创建曲谱库目录失败: {e}")))?;
-    let dest = dir.join(format!("{doc_id}.mid"));
-    std::fs::copy(src_path, &dest)
-        .map_err(|e| CoreError::Invalid(format!("复制 MIDI 失败: {e}")))?;
-
-    let mut entries = read_manifest(&dir);
-    entries.insert(
-        0,
-        ManifestEntry {
-            doc_id: doc_id.to_string(),
-            name: summary.name.clone(),
-            format: summary.format.clone(),
-            track_count: summary.track_count,
-            note_count: summary.note_count,
-            source_type: summary.source_type.clone(),
-            duration_ms: summary.duration_ms,
-            bpm_range: summary.bpm_range,
-            imported_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
-        },
-    );
-    entries.truncate(50);
-    write_manifest(&dir, &entries)
-}
-
-/// 读取 manifest；不存在返回空；损坏时重置为空数组并记录日志。
-fn read_manifest(dir: &Path) -> Vec<ManifestEntry> {
-    let path = dir.join("manifest.json");
-    match std::fs::read_to_string(&path) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| {
-            tracing::warn!("manifest 损坏，重置为空: {e}");
-            let _ = std::fs::write(&path, "[]");
-            Vec::new()
-        }),
-        Err(_) => Vec::new(),
-    }
-}
-
-/// 原子写 manifest。
-fn write_manifest(dir: &Path, entries: &[ManifestEntry]) -> Result<(), CoreError> {
-    let path = dir.join("manifest.json");
-    let tmp = dir.join("manifest.json.tmp");
-    let json = serde_json::to_string_pretty(entries)
-        .map_err(|e| CoreError::Invalid(format!("manifest 序列化失败: {e}")))?;
-    std::fs::write(&tmp, json)
-        .map_err(|e| CoreError::Invalid(format!("manifest 写入失败: {e}")))?;
-    std::fs::rename(&tmp, &path)
-        .map_err(|e| CoreError::Invalid(format!("manifest 替换失败: {e}")))?;
-    Ok(())
-}
-
-/// 曲谱库列表（过滤文件缺失条目）。
-pub fn list_documents(state: &AppState) -> Result<Vec<DocumentSummary>, CoreError> {
-    let dir = state.library_dir.lock().unwrap().clone();
-    let mut out = Vec::new();
-    let mut kept = Vec::new();
-    for e in read_manifest(&dir) {
-        if dir.join(format!("{}.mid", e.doc_id)).exists() {
-            kept.push(e.clone());
-            out.push(DocumentSummary {
-                doc_id: e.doc_id,
-                name: e.name,
-                format: e.format,
-                track_count: e.track_count,
-                note_count: e.note_count,
-                duration_ms: e.duration_ms,
-                bpm_range: e.bpm_range,
-                source_type: e.source_type,
-            });
-        }
-    }
-    // 顺手清理已缺失条目
-    if kept.len() != out.len() {
-        let _ = write_manifest(&dir, &kept);
-    }
-    Ok(out)
-}
 
 /// 取文档；内存没有时从曲谱库自动加载。
 pub fn load_document(state: &AppState, doc_id: &str) -> Result<MusicDocument, CoreError> {
