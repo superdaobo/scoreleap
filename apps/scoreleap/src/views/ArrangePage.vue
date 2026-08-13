@@ -355,6 +355,7 @@ const paramHints: Record<string, string> = {
   strategy: '超出音域的音符怎么处理：降八度 = 整体下移八度接着弹；智能八度 = 按旋律连续性选择同音名八度（音频转录推荐）；丢弃 = 干脆不弹；静音 = 保留节奏但不发音。',
   quantize: '把音符的起止时间对齐到节拍网格，让节奏更整齐。适合原始录音拍点不齐的情况。',
   simplify: '把复杂的和弦简化成更容易弹的形式（保留骨干音），降低演奏难度。',
+  melodyProtection: '复音超限时优先保留主旋律（最高音）与低音，避免高音旋律被低音和弦挤掉。音频转录默认开启；直接导入的 MIDI 默认关闭，保持原有行为。',
 }
 
 /** 缩放按钮状态 */
@@ -528,6 +529,25 @@ const zoomLabel = computed(() => `${zoom.value.toFixed(1)}x`)
               </label>
               <label class="relative inline-flex cursor-pointer items-center">
                 <input v-model="simplify" type="checkbox" class="peer sr-only" />
+                <div
+                  class="peer h-5 w-9 rounded-full bg-surface-variant after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-on-surface after:bg-on-surface after:transition-all peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white"
+                ></div>
+              </label>
+            </div>
+
+            <!-- 旋律保护（Issue #57：音频转录默认开启，直接 MIDI 默认关闭） -->
+            <div
+              class="flex items-center justify-between border border-outline-variant bg-surface p-3"
+            >
+              <label class="flex items-center gap-2 font-code-sm text-code-sm text-on-surface">
+                旋律保护
+                <span class="help-hint">
+                  <span class="help-icon">?</span>
+                  <span class="help-tip">{{ paramHints.melodyProtection }}</span>
+                </span>
+              </label>
+              <label class="relative inline-flex cursor-pointer items-center">
+                <input v-model="melodyProtection" type="checkbox" class="peer sr-only" />
                 <div
                   class="peer h-5 w-9 rounded-full bg-surface-variant after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-on-surface after:bg-on-surface after:transition-all peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white"
                 ></div>
