@@ -25,8 +25,8 @@ $workflowPath = Join-Path $RepositoryRoot ".github/workflows/windows-build.yml"
 $workflow = [IO.File]::ReadAllText($workflowPath, [Text.Encoding]::UTF8)
 $requiredWorkflowFragments = @(
     "cargo.exe test --locked -p scoreleap-transcribe -p scoreleap-transcriber-native",
-    "pnpm.cmd test",
-    "pnpm.cmd build",
+    '"$env:PNPM_HOME\pnpm.cmd" test',
+    '"$env:PNPM_HOME\pnpm.cmd" build',
     "Prepare-NativeTranscriber.ps1",
     "Test-NativeTranscriberBundle.ps1",
     "Test-PackagingSecurity.ps1",
