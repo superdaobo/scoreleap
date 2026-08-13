@@ -493,52 +493,81 @@ fn polyphony_limit_melody(
         return notes.len();
     }
     notes.sort_by_key(|n| (n.start_us, n.note));
-    let mut active: Vec<NoteEvent> = Vec::new();
-    let mut kept: Vec<NoteEvent> = Vec::with_capacity(notes.len());
+    // active / kept 保存排序后 notes 的索引，避免按 (start,note,velocity) 值匹配
+    // 误删跨轨同音高副本（同音反复/双轨同音场景）。
+    let mut active: Vec<usize> = Vec::new();
+    let mut kept: Vec<usize> = Vec::with_capacity(notes.len());
     let mut dropped = 0usize;
-    for n in notes.drain(..) {
-        active.retain(|a| {
+    for idx in 0..notes.len() {
+        let n = notes[idx];
+        active.retain(|&a| {
             // 仍在发声，或与当前音符同属一个 onset cluster（和弦事件）
-            a.start_us + a.duration_us > n.start_us
-                || (a.start_us - n.start_us).abs() <= ONSET_CLUSTER_TOLERANCE_US
+            let a_note = notes[a];
+            a_note.start_us + a_note.duration_us > n.start_us
+                || (a_note.start_us - n.start_us).abs() <= ONSET_CLUSTER_TOLERANCE_US
         });
-        active.push(n);
-        kept.push(n);
+        active.push(idx);
+        kept.push(idx);
         while active.len() > max {
-            let top_note = active.iter().map(|a| a.note).max().expect("active 非空");
-            let bass_note = active.iter().map(|a| a.note).min().expect("active 非空");
-            // 候选：Top Voice 永远受保护；max >= 2 时 Bass 也受保护
+            // Top/Bass 角色按当前 active 计算（同音高并列取先进入者）
+            let top_idx = *active
+                .iter()
+                .max_by_key(|&&a| notes[a].note)
+                .expect("active 非空");
+            let bass_idx = *active
+                .iter()
+                .min_by_key(|&&a| notes[a].note)
+                .expect("active 非空");
+            // 首选淘汰：非 Top 且（max >= 2 时）非 Bass 的内声部，importance 最低者
             let mut candidates: Vec<usize> = active
                 .iter()
-                .enumerate()
-                .filter(|(_, a)| a.note != top_note)
-                .filter(|(_, a)| !(max >= 2 && a.note == bass_note))
-                .map(|(i, _)| i)
+                .copied()
+                .filter(|&a| a != top_idx && !(max >= 2 && a == bass_idx))
                 .collect();
-            if candidates.is_empty() {
-                break;
-            }
-            // importance 升序，importance 并列时保留较高音（旋律倾向）
-            candidates.sort_by(|&a, &b| {
-                inner_voice_importance(&active[a])
-                    .cmp(&inner_voice_importance(&active[b]))
-                    .then_with(|| active[b].note.cmp(&active[a].note))
-            });
-            let loser = active.remove(candidates[0]);
-            kept.retain(|k| {
-                !(k.start_us == loser.start_us
-                    && k.note == loser.note
-                    && k.velocity == loser.velocity)
-            });
+            let loser = if candidates.is_empty() {
+                // 极端情况（active 全部同音高，如跨轨同音反复）：无内声部可淘汰。
+                // 退化为按 importance 淘汰（允许动 Top/Bass），保证 max 永不超限。
+                active
+                    .iter()
+                    .copied()
+                    .min_by(|&a, &b| {
+                        inner_voice_importance(&notes[a])
+                            .cmp(&inner_voice_importance(&notes[b]))
+                            .then_with(|| notes[b].note.cmp(&notes[a].note))
+                    })
+                    .expect("active 非空")
+            } else {
+                // importance 升序，importance 并列时保留较高音（旋律倾向）
+                candidates.sort_by(|&a, &b| {
+                    inner_voice_importance(&notes[a])
+                        .cmp(&inner_voice_importance(&notes[b]))
+                        .then_with(|| notes[b].note.cmp(&notes[a].note))
+                });
+                candidates[0]
+            };
+            let pos = active
+                .iter()
+                .position(|&a| a == loser)
+                .expect("loser 必在 active");
+            active.remove(pos);
+            let kept_pos = kept
+                .iter()
+                .position(|&k| k == loser)
+                .expect("loser 必在 kept");
+            kept.remove(kept_pos);
             dropped += 1;
-            // 统计：本轮 Top 与 Bass 均受保护保留
-            stats.protected_top_voice += 1;
-            if max >= 2 {
+            // 统计：被淘汰者若是 Top/Bass 计入 dropped_*，否则计入保护保留
+            if loser == top_idx {
+                stats.dropped_top_voice += 1;
+            } else {
+                stats.protected_top_voice += 1;
+            }
+            if max >= 2 && loser != bass_idx {
                 stats.protected_bass += 1;
             }
         }
     }
-    *notes = kept;
+    *notes = kept.into_iter().map(|i| notes[i]).collect();
     dropped
 }
 
@@ -1150,17 +1179,15 @@ mod tests {
             ..Default::default()
         };
         let (notes, _) = arrange_pipeline(&doc, &opts, &test_profile(), &[0]).unwrap();
-        let mut out: Vec<u8> = notes.iter().map(|n| n.note).collect();
-        out.sort_unstable();
-        assert_eq!(out.len(), 2);
-        assert_ne!(out[0], out[1], "两个独立声部应映射到不同游戏键");
-        assert!(out[0] <= out[1], "Bass 映射不得高于 Top 映射");
-        // top（原音 96）应映射到 72
-        let top = notes
-            .iter()
-            .find(|n| n.start_us == 0 && n.note == 72)
-            .or_else(|| notes.iter().max_by_key(|n| n.note));
-        let _ = top;
+        // 96（Top）先映射 → 72；84（Bass）候选 {48,60,72}，72 已被占用 → 60；
+        // 结果 Bass(60) < Top(72)，无声部交叉、无同键碰撞。
+        let mut mapped: Vec<u8> = notes.iter().map(|n| n.note).collect();
+        mapped.sort_unstable();
+        assert_eq!(
+            mapped,
+            vec![60, 72],
+            "Bass 应映射 60、Top 应映射 72 且无交叉"
+        );
     }
 
     /// Issue #57 测试 6：max_polyphony=1 时优先 Top Voice，而非最大 velocity 的低音。
