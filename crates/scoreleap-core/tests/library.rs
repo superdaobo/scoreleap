@@ -53,10 +53,10 @@ fn setup() -> (tempfile::TempDir, AppState) {
         profile_dir: Mutex::new(dir.path().join("profiles")),
         ..Default::default()
     };
-    // 复制真实 identity-v Profile（与打包/开发目录一致）
-    let src_profile =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game-profiles/identity-v");
-    assert!(src_profile.exists(), "缺少 game-profiles/identity-v");
+    // 复制真实 identity-v Profile（与打包/开发目录一致：src-tauri/resources/game-profiles）
+    let src_profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/scoreleap/src-tauri/resources/game-profiles/identity-v");
+    assert!(src_profile.exists(), "缺少 identity-v Profile 资源");
     let dst = dir.path().join("profiles/identity-v");
     std::fs::create_dir_all(&dst).unwrap();
     for entry in std::fs::read_dir(&src_profile).unwrap() {
@@ -134,6 +134,7 @@ fn compile_caches_sequence_notes() {
         max_polyphony: 4,
         quantize_grid: None,
         simplify_chords: false,
+        melody_protection: false,
     };
     let compiled = compile(&state, summary.doc_id, vec![0], opts).unwrap();
     assert_eq!(compiled.stats.output_notes, 8);
