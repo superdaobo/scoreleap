@@ -6,7 +6,9 @@ import { useTranscriptionStore } from '../stores/transcriptionStore'
 import { useModelStore } from '../stores/modelStore'
 import { getAudioFileInfo, pickAudioFile, pickMidiFile } from '../services/api'
 import { formatDuration } from '../utils/format'
-import type { DocumentSummary } from '../types'
+import LibraryDocModals from '../components/LibraryDocModals.vue'
+import LibraryGroupModals from '../components/LibraryGroupModals.vue'
+import type { DocumentSummary, GroupInfo } from '../types'
 
 const router = useRouter()
 const store = useLibraryStore()
@@ -122,149 +124,78 @@ function onDrop(e: DragEvent): void {
 }
 
 // ---------------------------------------------------------------------------
-// 分组管理
+// 分组管理（弹窗交互在 LibraryGroupModals / LibraryDocModals 子组件）
 // ---------------------------------------------------------------------------
 
 const newGroupOpen = ref(false)
-const newGroupName = ref('')
-const newGroupError = ref<string | null>(null)
-
 /** 待重命名的分组（null = 弹窗关闭） */
-const renameGroupTarget = ref<{ group_id: string; name: string } | null>(null)
-const renameGroupName = ref('')
-const renameGroupError = ref<string | null>(null)
-
+const renameGroupTarget = ref<GroupInfo | null>(null)
 /** 待删除确认的分组（null = 弹窗关闭） */
-const deleteGroupTarget = ref<{ group_id: string; name: string } | null>(null)
-const deleteGroupError = ref<string | null>(null)
-
-async function submitCreateGroup(): Promise<void> {
-  newGroupError.value = null
-  try {
-    const group = await store.createGroup(newGroupName.value)
-    newGroupOpen.value = false
-    newGroupName.value = ''
-    activeView.value = group.group_id
-    store.notice = `已创建分组「${group.name}」`
-  } catch (e) {
-    newGroupError.value = e instanceof Error ? e.message : String(e)
-  }
-}
+const deleteGroupTarget = ref<GroupInfo | null>(null)
 
 function openRenameGroup(groupId: string): void {
   const g = store.groups.find((x) => x.group_id === groupId)
-  if (!g) return
-  renameGroupTarget.value = { group_id: g.group_id, name: g.name }
-  renameGroupName.value = g.name
-  renameGroupError.value = null
-}
-
-async function submitRenameGroup(): Promise<void> {
-  const t = renameGroupTarget.value
-  if (!t) return
-  renameGroupError.value = null
-  try {
-    await store.renameGroup(t.group_id, renameGroupName.value)
-    renameGroupTarget.value = null
-    store.notice = '分组已重命名'
-  } catch (e) {
-    renameGroupError.value = e instanceof Error ? e.message : String(e)
-  }
+  if (g) renameGroupTarget.value = g
 }
 
 function openDeleteGroup(groupId: string): void {
   const g = store.groups.find((x) => x.group_id === groupId)
-  if (!g) return
-  deleteGroupTarget.value = { group_id: g.group_id, name: g.name }
-  deleteGroupError.value = null
+  if (g) deleteGroupTarget.value = g
 }
 
-async function submitDeleteGroup(): Promise<void> {
+/** 新建分组成功：切换视图并提示 */
+function onGroupCreated(group: GroupInfo): void {
+  newGroupOpen.value = false
+  activeView.value = group.group_id
+  store.notice = `已创建分组「${group.name}」`
+}
+
+function onGroupRenamed(): void {
+  renameGroupTarget.value = null
+  store.notice = '分组已重命名'
+}
+
+function onGroupDeleted(): void {
   const t = deleteGroupTarget.value
-  if (!t) return
-  deleteGroupError.value = null
-  try {
-    await store.deleteGroup(t.group_id)
-    if (activeView.value === t.group_id) activeView.value = 'all'
-    deleteGroupTarget.value = null
-    store.notice = `已删除分组「${t.name}」，组内曲谱回到未分类`
-  } catch (e) {
-    deleteGroupError.value = e instanceof Error ? e.message : String(e)
-  }
+  if (t && activeView.value === t.group_id) activeView.value = 'all'
+  deleteGroupTarget.value = null
+  store.notice = t ? `已删除分组「${t.name}」，组内曲谱回到未分类` : '分组已删除'
 }
 
 // ---------------------------------------------------------------------------
 // 曲谱管理：删除 / 重命名 / 移动分组
 // ---------------------------------------------------------------------------
 
-/** 待删除确认的曲谱（null = 弹窗关闭） */
 const deleteDocTarget = ref<DocumentSummary | null>(null)
-const deleteDocError = ref<string | null>(null)
-
-/** 待重命名的曲谱（null = 弹窗关闭） */
 const renameDocTarget = ref<DocumentSummary | null>(null)
-const renameDocName = ref('')
-const renameDocError = ref<string | null>(null)
-
-/** 待移动分组的曲谱（null = 弹窗关闭） */
 const moveDocTarget = ref<DocumentSummary | null>(null)
-const moveDocGroupId = ref<string>('')
-const moveDocError = ref<string | null>(null)
 
 function openDeleteDoc(doc: DocumentSummary): void {
   deleteDocTarget.value = doc
-  deleteDocError.value = null
-}
-
-async function submitDeleteDoc(): Promise<void> {
-  const t = deleteDocTarget.value
-  if (!t) return
-  deleteDocError.value = null
-  try {
-    await store.deleteDocument(t.doc_id)
-    deleteDocTarget.value = null
-    store.notice = `已删除「${t.name}」`
-  } catch (e) {
-    deleteDocError.value = e instanceof Error ? e.message : String(e)
-  }
 }
 
 function openRenameDoc(doc: DocumentSummary): void {
   renameDocTarget.value = doc
-  renameDocName.value = doc.name
-  renameDocError.value = null
-}
-
-async function submitRenameDoc(): Promise<void> {
-  const t = renameDocTarget.value
-  if (!t) return
-  renameDocError.value = null
-  try {
-    await store.renameDocument(t.doc_id, renameDocName.value)
-    renameDocTarget.value = null
-    store.notice = '曲谱已重命名'
-  } catch (e) {
-    renameDocError.value = e instanceof Error ? e.message : String(e)
-  }
 }
 
 function openMoveDoc(doc: DocumentSummary): void {
   moveDocTarget.value = doc
-  moveDocGroupId.value = doc.group_id ?? ''
-  moveDocError.value = null
 }
 
-async function submitMoveDoc(): Promise<void> {
-  const t = moveDocTarget.value
-  if (!t) return
-  moveDocError.value = null
-  try {
-    await store.moveToGroup(t.doc_id, moveDocGroupId.value || null)
-    moveDocTarget.value = null
-    store.notice = moveDocGroupId.value ? '已移动到分组' : '已移回未分类'
-  } catch (e) {
-    moveDocError.value = e instanceof Error ? e.message : String(e)
-  }
+function onDocRenamed(): void {
+  renameDocTarget.value = null
+  store.notice = '曲谱已重命名'
+}
+
+function onDocDeleted(): void {
+  const t = deleteDocTarget.value
+  deleteDocTarget.value = null
+  store.notice = t ? `已删除「${t.name}」` : '曲谱已删除'
+}
+
+function onDocMoved(toGroup: boolean): void {
+  moveDocTarget.value = null
+  store.notice = toGroup ? '已移动到分组' : '已移回未分类'
 }
 
 // ---------------------------------------------------------------------------
@@ -766,219 +697,31 @@ function moveCard(docId: string, offset: -1 | 1): void {
       </template>
     </div>
 
-    <!-- 新建分组弹窗 -->
-    <div
-      v-if="newGroupOpen"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
-      @click.self="newGroupOpen = false"
-    >
-      <div
-        class="w-full max-w-md border border-outline-variant bg-surface-container-lowest p-gutter-desktop shadow-2xl shadow-black/80"
-      >
-        <h2 class="font-display text-[24px] text-on-surface">新建分组</h2>
-        <p class="mt-1 text-sm text-on-surface-variant">
-          创建后可在卡片操作中将曲谱移入该分组。
-        </p>
-        <input
-          v-model="newGroupName"
-          type="text"
-          placeholder="分组名称"
-          class="mt-4 w-full border border-outline-variant bg-surface-container-lowest px-2 py-1.5 font-code-sm text-code-sm text-on-surface focus:border-primary"
-          @keyup.enter="submitCreateGroup"
-        />
-        <p v-if="newGroupError" class="mt-2 font-code-sm text-code-sm text-error">
-          {{ newGroupError }}
-        </p>
-        <div class="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            class="border border-outline-variant px-4 py-2 font-code-sm text-code-sm text-on-surface transition-colors hover:border-primary hover:text-primary"
-            @click="newGroupOpen = false"
-          >取消</button>
-          <button
-            type="button"
-            class="rounded bg-primary-container px-5 py-2 font-label-caps text-label-caps text-on-primary-container transition-colors hover:bg-primary-fixed disabled:opacity-50"
-            :disabled="!newGroupName.trim()"
-            @click="submitCreateGroup"
-          >创建</button>
-        </div>
-      </div>
-    </div>
+    <!-- 分组管理弹窗（新建/重命名/删除） -->
+    <LibraryGroupModals
+      :create-open="newGroupOpen"
+      :rename-target="renameGroupTarget"
+      :delete-target="deleteGroupTarget"
+      @close-create="newGroupOpen = false"
+      @close-rename="renameGroupTarget = null"
+      @close-delete="deleteGroupTarget = null"
+      @created="onGroupCreated"
+      @renamed="onGroupRenamed"
+      @deleted="onGroupDeleted"
+    />
 
-    <!-- 重命名分组弹窗 -->
-    <div
-      v-if="renameGroupTarget"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
-      @click.self="renameGroupTarget = null"
-    >
-      <div
-        class="w-full max-w-md border border-outline-variant bg-surface-container-lowest p-gutter-desktop shadow-2xl shadow-black/80"
-      >
-        <h2 class="font-display text-[24px] text-on-surface">重命名分组</h2>
-        <input
-          v-model="renameGroupName"
-          type="text"
-          placeholder="分组名称"
-          class="mt-4 w-full border border-outline-variant bg-surface-container-lowest px-2 py-1.5 font-code-sm text-code-sm text-on-surface focus:border-primary"
-          @keyup.enter="submitRenameGroup"
-        />
-        <p v-if="renameGroupError" class="mt-2 font-code-sm text-code-sm text-error">
-          {{ renameGroupError }}
-        </p>
-        <div class="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            class="border border-outline-variant px-4 py-2 font-code-sm text-code-sm text-on-surface transition-colors hover:border-primary hover:text-primary"
-            @click="renameGroupTarget = null"
-          >取消</button>
-          <button
-            type="button"
-            class="rounded bg-primary-container px-5 py-2 font-label-caps text-label-caps text-on-primary-container transition-colors hover:bg-primary-fixed disabled:opacity-50"
-            :disabled="!renameGroupName.trim()"
-            @click="submitRenameGroup"
-          >保存</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 删除分组确认弹窗 -->
-    <div
-      v-if="deleteGroupTarget"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
-      @click.self="deleteGroupTarget = null"
-    >
-      <div
-        class="w-full max-w-md border border-outline-variant bg-surface-container-lowest p-gutter-desktop shadow-2xl shadow-black/80"
-      >
-        <h2 class="font-display text-[24px] text-on-surface">删除分组</h2>
-        <p class="mt-2 text-sm text-on-surface-variant">
-          确定删除分组「<span class="text-on-surface">{{ deleteGroupTarget.name }}</span>」？
-          组内 {{ groupCount(deleteGroupTarget.group_id) }} 首曲谱将回到未分类，曲谱本身不会被删除。
-        </p>
-        <p v-if="deleteGroupError" class="mt-2 font-code-sm text-code-sm text-error">
-          {{ deleteGroupError }}
-        </p>
-        <div class="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            class="border border-outline-variant px-4 py-2 font-code-sm text-code-sm text-on-surface transition-colors hover:border-primary hover:text-primary"
-            @click="deleteGroupTarget = null"
-          >取消</button>
-          <button
-            type="button"
-            class="rounded bg-error px-5 py-2 font-label-caps text-label-caps text-on-error-container transition-colors hover:opacity-80"
-            @click="submitDeleteGroup"
-          >删除分组</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 重命名曲谱弹窗 -->
-    <div
-      v-if="renameDocTarget"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
-      @click.self="renameDocTarget = null"
-    >
-      <div
-        class="w-full max-w-md border border-outline-variant bg-surface-container-lowest p-gutter-desktop shadow-2xl shadow-black/80"
-      >
-        <h2 class="font-display text-[24px] text-on-surface">重命名曲谱</h2>
-        <p class="mt-1 truncate text-sm text-on-surface-variant">{{ renameDocTarget.name }}</p>
-        <input
-          v-model="renameDocName"
-          type="text"
-          placeholder="曲谱名称"
-          class="mt-4 w-full border border-outline-variant bg-surface-container-lowest px-2 py-1.5 font-code-sm text-code-sm text-on-surface focus:border-primary"
-          @keyup.enter="submitRenameDoc"
-        />
-        <p v-if="renameDocError" class="mt-2 font-code-sm text-code-sm text-error">
-          {{ renameDocError }}
-        </p>
-        <div class="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            class="border border-outline-variant px-4 py-2 font-code-sm text-code-sm text-on-surface transition-colors hover:border-primary hover:text-primary"
-            @click="renameDocTarget = null"
-          >取消</button>
-          <button
-            type="button"
-            class="rounded bg-primary-container px-5 py-2 font-label-caps text-label-caps text-on-primary-container transition-colors hover:bg-primary-fixed disabled:opacity-50"
-            :disabled="!renameDocName.trim()"
-            @click="submitRenameDoc"
-          >保存</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 删除曲谱确认弹窗 -->
-    <div
-      v-if="deleteDocTarget"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
-      @click.self="deleteDocTarget = null"
-    >
-      <div
-        class="w-full max-w-md border border-outline-variant bg-surface-container-lowest p-gutter-desktop shadow-2xl shadow-black/80"
-      >
-        <h2 class="font-display text-[24px] text-on-surface">删除曲谱</h2>
-        <p class="mt-2 text-sm text-on-surface-variant">
-          确定删除「<span class="text-on-surface">{{ deleteDocTarget.name }}</span>」？
-          曲谱文件将从曲谱库中永久移除，此操作不可撤销。
-        </p>
-        <p v-if="deleteDocError" class="mt-2 font-code-sm text-code-sm text-error">
-          {{ deleteDocError }}
-        </p>
-        <div class="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            class="border border-outline-variant px-4 py-2 font-code-sm text-code-sm text-on-surface transition-colors hover:border-primary hover:text-primary"
-            @click="deleteDocTarget = null"
-          >取消</button>
-          <button
-            type="button"
-            class="rounded bg-error px-5 py-2 font-label-caps text-label-caps text-on-error-container transition-colors hover:opacity-80"
-            @click="submitDeleteDoc"
-          >删除</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 移动到分组弹窗 -->
-    <div
-      v-if="moveDocTarget"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
-      @click.self="moveDocTarget = null"
-    >
-      <div
-        class="w-full max-w-md border border-outline-variant bg-surface-container-lowest p-gutter-desktop shadow-2xl shadow-black/80"
-      >
-        <h2 class="font-display text-[24px] text-on-surface">移动到分组</h2>
-        <p class="mt-1 truncate text-sm text-on-surface-variant">{{ moveDocTarget.name }}</p>
-        <select
-          v-model="moveDocGroupId"
-          class="mt-4 w-full border border-outline-variant bg-surface-container-lowest px-2 py-1.5 font-code-sm text-code-sm text-on-surface focus:border-primary"
-        >
-          <option value="">未分类</option>
-          <option v-for="g in store.groups" :key="g.group_id" :value="g.group_id">
-            {{ g.name }}
-          </option>
-        </select>
-        <p v-if="moveDocError" class="mt-2 font-code-sm text-code-sm text-error">
-          {{ moveDocError }}
-        </p>
-        <div class="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            class="border border-outline-variant px-4 py-2 font-code-sm text-code-sm text-on-surface transition-colors hover:border-primary hover:text-primary"
-            @click="moveDocTarget = null"
-          >取消</button>
-          <button
-            type="button"
-            class="rounded bg-primary-container px-5 py-2 font-label-caps text-label-caps text-on-primary-container transition-colors hover:bg-primary-fixed"
-            @click="submitMoveDoc"
-          >移动</button>
-        </div>
-      </div>
-    </div>
+    <!-- 曲谱管理弹窗（重命名/删除/移动） -->
+    <LibraryDocModals
+      :rename-target="renameDocTarget"
+      :delete-target="deleteDocTarget"
+      :move-target="moveDocTarget"
+      @close-rename="renameDocTarget = null"
+      @close-delete="deleteDocTarget = null"
+      @close-move="moveDocTarget = null"
+      @renamed="onDocRenamed"
+      @deleted="onDocDeleted"
+      @moved="onDocMoved"
+    />
 
     <!-- 转录确认弹窗 -->
     <div

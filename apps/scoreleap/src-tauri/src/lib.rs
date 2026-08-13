@@ -132,10 +132,7 @@ fn move_document_to_group(
 }
 
 #[tauri::command]
-fn reorder_documents(
-    state: State<'_, AppState>,
-    doc_ids: Vec<String>,
-) -> Result<(), CoreError> {
+fn reorder_documents(state: State<'_, AppState>, doc_ids: Vec<String>) -> Result<(), CoreError> {
     scoreleap_core::reorder_documents(&state, &doc_ids)
 }
 
@@ -468,20 +465,29 @@ fn get_or_init_transcription(
         move |payload: &scoreleap_transcription::ImportPayload| -> Result<String, String> {
             let core_state = handle2.state::<AppState>();
             // 解析 worker metadata.json 为转录元数据（缺字段/格式不符时降级为 None）
-            let transcription = payload.metadata_json.as_deref().and_then(|j| {
-                serde_json::from_str::<scoreleap_core::TranscriptionMeta>(j).ok()
-            });
+            let transcription = payload
+                .metadata_json
+                .as_deref()
+                .and_then(|j| serde_json::from_str::<scoreleap_core::TranscriptionMeta>(j).ok());
             scoreleap_core::import_midi_from_path(
                 &core_state,
                 &payload.midi_path,
                 &payload.display_name,
                 "audio_transcription",
-                transcription,
-                payload.title.clone(),
-                payload.artist.clone(),
+                scoreleap_core::ImportMeta {
+                    transcription,
+                    title: payload.title.clone(),
+                    artist: payload.artist.clone(),
+                },
             )
             // 自动去重命中时返回空 doc_id，前端据此提示「检测到重复曲谱」
-            .map(|s| if s.duplicated { String::new() } else { s.doc_id })
+            .map(|s| {
+                if s.duplicated {
+                    String::new()
+                } else {
+                    s.doc_id
+                }
+            })
             .map_err(|e| e.to_string())
         },
     );

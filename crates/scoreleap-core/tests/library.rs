@@ -171,9 +171,7 @@ fn transcription_import_sets_source_type() {
         generated.to_str().unwrap(),
         "测试（音频转录）",
         "audio_transcription",
-        None,
-        None,
-        None,
+        scoreleap_core::ImportMeta::default(),
     )
     .unwrap();
     assert_eq!(summary.source_type, "audio_transcription");
@@ -275,9 +273,7 @@ fn duplicate_import_skipped_by_name_and_source() {
         src1.to_str().unwrap(),
         "同一首歌（音频转录）",
         "audio_transcription",
-        None,
-        None,
-        None,
+        scoreleap_core::ImportMeta::default(),
     )
     .unwrap();
     assert!(!first.duplicated);
@@ -287,9 +283,7 @@ fn duplicate_import_skipped_by_name_and_source() {
         src2.to_str().unwrap(),
         "同一首歌（音频转录）",
         "audio_transcription",
-        None,
-        None,
-        None,
+        scoreleap_core::ImportMeta::default(),
     )
     .unwrap();
     assert!(second.duplicated);
@@ -317,7 +311,10 @@ fn group_crud_and_delete_moves_docs_to_ungrouped() {
     // 重命名
     let renamed = scoreleap_core::rename_group(&state, &group.group_id, "考级曲").unwrap();
     assert_eq!(renamed.name, "考级曲");
-    assert_eq!(scoreleap_core::list_groups(&state).unwrap()[0].name, "考级曲");
+    assert_eq!(
+        scoreleap_core::list_groups(&state).unwrap()[0].name,
+        "考级曲"
+    );
 
     // 移回未分类
     scoreleap_core::move_document_to_group(&state, &summary.doc_id, None).unwrap();
@@ -334,10 +331,12 @@ fn group_crud_and_delete_moves_docs_to_ungrouped() {
     assert!(scoreleap_core::create_group(&state, "练习曲").is_ok());
     assert!(scoreleap_core::create_group(&state, "练习曲").is_err());
     assert!(scoreleap_core::create_group(&state, "  ").is_err());
-    assert!(
-        scoreleap_core::move_document_to_group(&state, &summary.doc_id, Some("group-nope".into()))
-            .is_err()
-    );
+    assert!(scoreleap_core::move_document_to_group(
+        &state,
+        &summary.doc_id,
+        Some("group-nope".into())
+    )
+    .is_err());
 }
 
 #[test]
@@ -468,9 +467,11 @@ fn transcription_meta_persists_with_import() {
         generated.to_str().unwrap(),
         "测试（音频转录）",
         "audio_transcription",
-        Some(meta),
-        Some("致爱丽丝".into()),
-        Some("贝多芬".into()),
+        scoreleap_core::ImportMeta {
+            transcription: Some(meta),
+            title: Some("致爱丽丝".into()),
+            artist: Some("贝多芬".into()),
+        },
     )
     .unwrap();
     assert!(!summary.duplicated);
