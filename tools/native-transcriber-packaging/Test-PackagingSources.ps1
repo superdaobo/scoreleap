@@ -24,7 +24,7 @@ if (@($resources | Where-Object { $_ -match '(?i)(transcription-worker|python|ve
 $workflowPath = Join-Path $RepositoryRoot ".github/workflows/windows-build.yml"
 $workflow = [IO.File]::ReadAllText($workflowPath, [Text.Encoding]::UTF8)
 $requiredWorkflowFragments = @(
-    "cargo.exe test --locked -p scoreleap-transcribe -p scoreleap-transcriber-native",
+    "cargo.exe test --locked --package scoreleap-transcribe --package scoreleap-transcriber-native",
     '"$env:PNPM_HOME\pnpm.cmd" test',
     '"$env:PNPM_HOME\pnpm.cmd" build',
     "Prepare-NativeTranscriber.ps1",
