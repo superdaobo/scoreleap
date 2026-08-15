@@ -42,6 +42,15 @@
     ],
     "shortDescription": "跨平台游戏乐器曲谱转换与辅助演奏工具",
     "longDescription": "ScoreLeap（谱跃）将 MIDI/曲谱转换为适合游戏内乐器演奏的标准时间轴，通过键盘或触摸在自由演奏场景完成演奏。仅用于自由演奏/个人空间，请注意游戏服务条款风险。",
-    "category": "Utility"
+    "category": "Utility",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese"
+        ],
+        "installerHooks": "nsis/installer-hooks.nsh"
+      }
+    }
   }
 }
