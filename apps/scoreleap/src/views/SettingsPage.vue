@@ -54,7 +54,7 @@ onMounted(() => {
   void transcription.loadEngineStatus()
   getVersion()
     .then((v) => (appVersion.value = v))
-    .catch(() => (appVersion.value = '0.3.2'))
+    .catch(() => (appVersion.value = '0.3.3'))
 })
 
 const logLevels: { value: LogLevel; label: string }[] = [
@@ -440,7 +440,7 @@ async function confirmReAgree(): Promise<void> {
             <dl class="mt-3 space-y-2 font-code-sm text-code-sm">
               <div class="flex gap-2">
                 <dt class="w-16 text-on-surface-variant">版本</dt>
-                <dd class="text-on-surface">{{ appVersion || '0.3.2' }}</dd>
+                <dd class="text-on-surface">{{ appVersion || '0.3.3' }}</dd>
               </div>
               <div class="flex gap-2">
                 <dt class="w-16 text-on-surface-variant">许可证</dt>

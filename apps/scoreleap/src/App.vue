@@ -69,7 +69,7 @@ onMounted(async () => {
   try {
     appVersion.value = await getVersion()
   } catch {
-    appVersion.value = '0.3.2'
+    appVersion.value = '0.3.3'
   }
 })
 </script>
@@ -118,7 +118,7 @@ onMounted(async () => {
         </button>
         <span
           class="hidden rounded border border-outline-variant bg-surface-container-high px-2 py-1 font-code-sm text-code-sm text-on-surface-variant lg:inline"
-          >v{{ appVersion || '0.3.2' }}</span
+          >v{{ appVersion || '0.3.3' }}</span
         >
       </div>
     </header>
