@@ -38,19 +38,26 @@
    ```
 
 3. （可选）本地打包验证：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1`，产物输出到 `dist/release/ScoreLeap-setup.exe`。
-4. 提交（Conventional Commits，如 `chore: bump version to 0.3.2`），合并到 `main`。
-5. 打 tag 并推送：
+   - 注意：打包前需先退出正在运行的 ScoreLeap（否则 `target/release/ScoreLeap.exe` 被锁定，tauri build 报 os error 5）。
+4. （建议）安装包验收（Issue #61 起必做，静默命令不受 MSYS 路径转换干扰，须用 PowerShell 启动）：
+   - 中文向导：双击运行 `ScoreLeap-setup.exe`，确认安装向导界面为简体中文（标题「ScoreLeap 安装」、按钮「下一步(N)」「取消(C)」），确认后取消；
+   - 静默安装：`Start-Process ... -ArgumentList '/S','/D=<测试目录>' -Wait`，检查安装目录含 `ScoreLeap.exe` / `resources` / `uninstall.exe`；
+   - 卸载入口：检查「程序和功能」注册表项（`HKCU\...\Uninstall\ScoreLeap`）与开始菜单「卸载 ScoreLeap」快捷方式；
+   - 覆盖升级：再次运行安装包，确认退出码 0 且 `%APPDATA%\com.superdaobo.scoreleap` 用户数据保留；
+   - 静默卸载：运行 `<安装目录>\uninstall.exe /S`，确认安装目录/快捷方式/注册表项全部清理。
+5. 提交（Conventional Commits，如 `chore: bump version to 0.3.2`），合并到 `main`。
+6. 打 tag 并推送：
 
    ```bash
    git tag v0.3.2
    git push origin v0.3.2
    ```
 
-6. GitHub Actions（`.github/workflows/windows-build.yml`）自动触发：
+7. GitHub Actions（`.github/workflows/windows-build.yml`）自动触发：
    - 构建 NSIS 安装包 → 重命名为 `ScoreLeap-setup.exe` → 计算 SHA256；
    - 推 `v*` tag 时自动创建 GitHub **Release**，上传 `ScoreLeap-setup.exe` 与 `scoreleap-windows-installer.sha256`。
 
-7. 在 Release 页确认安装包与 SHA256 后，向用户公布。
+8. 在 Release 页确认安装包与 SHA256 后，向用户公布。
 
 ## 相关脚本
 
