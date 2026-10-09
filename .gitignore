@@ -71,3 +71,9 @@ tools/transkun-worker/build/
 tools/transkun-worker/dist/
 apps/scoreleap/src-tauri/resources/scoreleap-transkun/*
 !apps/scoreleap/src-tauri/resources/scoreleap-transkun/README.md
+
+# ScoreLeap Remotion 宣传视频：本地私有媒体 / 转录派生数据 / 渲染产物
+tools/scoreleap-video/public/local/
+tools/scoreleap-video/local-props.json
+tools/scoreleap-video/.video-local/
+tools/scoreleap-video/out/

@@ -1,0 +1,32 @@
+{
+  "name": "scoreleap-video",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "studio:local": "remotion studio src/index.ts --props=local-props.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "render": "remotion render src/index.ts ScoreLeapTrailer90 out/scoreleap-trailer.mp4 --codec=h264 --audio-codec=aac --crf=18",
+    "render:local": "remotion render src/index.ts ScoreLeapTrailer90 out/scoreleap-trailer-local.mp4 --codec=h264 --audio-codec=aac --crf=18 --props=local-props.json",
+    "render:preview": "remotion render src/index.ts ScoreLeapTrailer90 out/scoreleap-preview.mp4 --codec=h264 --crf=20 --frames=0-899",
+    "still": "remotion still src/index.ts ScoreLeapTrailer90 out/scoreleap-cover.png --frame=420",
+    "prepare:local": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-local-media.ps1"
+  },
+  "dependencies": {
+    "@fontsource/geist": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
+    "lucide-react": "1.31.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "remotion": "4.0.512"
+  },
+  "devDependencies": {
+    "@remotion/cli": "4.0.512",
+    "@types/react": "^19.0.0",
+    "@types/node": "^22.10.7",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "~5.6.3"
+  }
+}

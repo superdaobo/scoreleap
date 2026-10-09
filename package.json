@@ -12,6 +12,12 @@
     "typecheck": "pnpm --filter scoreleap-app typecheck",
     "test": "pnpm --filter scoreleap-app test",
     "test:e2e": "pnpm --filter scoreleap-app test:e2e",
+    "video:studio": "pnpm --filter scoreleap-video studio",
+    "video:studio:local": "pnpm --filter scoreleap-video studio:local",
+    "video:prepare:local": "pnpm --filter scoreleap-video prepare:local",
+    "video:render": "pnpm --filter scoreleap-video render",
+    "video:render:local": "pnpm --filter scoreleap-video render:local",
+    "video:still": "pnpm --filter scoreleap-video still",
     "prepare:transkun": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/transkun-worker/Prepare-TranskunWorker.ps1",
     "test:transkun-bundle": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/transkun-worker/Test-TranskunBundle.ps1 -AllowPlaceholder"
   }
